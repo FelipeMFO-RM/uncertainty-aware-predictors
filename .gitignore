@@ -1,0 +1,36 @@
+# Reference copy — read-only, not tracked
+deterministic-predictors/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Data and models (large files)
+data/raw/
+data/processed/
+data/enriched/
+models/
+
+# H2O tmp
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db

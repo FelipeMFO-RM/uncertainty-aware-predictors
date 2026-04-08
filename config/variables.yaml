@@ -1,0 +1,17 @@
+FEATURES_RANGE_AN:
+  # Fill in [min, max] per feature for the annealing process
+  # example:
+  # temperature: [400, 900]
+  # time: [1, 120]
+
+FEATURES_RANGE_CD:
+  # Fill in [min, max] per feature for the cold drawing process
+  # example:
+  # initial_diameter: [1.0, 20.0]
+  # final_diameter: [0.5, 18.0]
+
+PATHS:
+  data_raw: data/raw/
+  data_processed: data/processed/
+  data_enriched: data/enriched/
+  models: models/
