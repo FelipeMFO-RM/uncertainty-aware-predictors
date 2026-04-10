@@ -21,6 +21,7 @@ build/
 venv/
 env/
 .env
+*.env
 
 # Data and models (large files)
 data/raw/

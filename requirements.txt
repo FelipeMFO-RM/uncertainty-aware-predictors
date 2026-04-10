@@ -1,0 +1,21 @@
+# Core data
+numpy
+pandas
+
+# Machine learning
+scikit-learn
+h2o
+
+# AutoGluon (tabular — pulls LightGBM, XGBoost, CatBoost, etc.)
+autogluon[tabular]
+
+# Visualisation
+matplotlib
+seaborn
+
+# Config
+pyyaml
+
+# Notebooks
+jupyterlab
+ipykernel
