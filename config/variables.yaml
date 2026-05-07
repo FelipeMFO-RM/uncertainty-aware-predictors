@@ -11,7 +11,7 @@ FEATURES_RANGE_CD:
   # final_diameter: [0.5, 18.0]
 
 PATHS:
-  data_raw: data/raw/
-  data_processed: data/processed/
-  data_enriched: data/enriched/
-  models: models/
+  data_raw: ../../data/raw/
+  data_processed: ../../data/processed/
+  data_enriched: ../../data/enriched/
+  models: ../../models/

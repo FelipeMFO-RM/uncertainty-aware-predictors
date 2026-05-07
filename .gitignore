@@ -35,3 +35,6 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+
+*.pkl
+*.csv
