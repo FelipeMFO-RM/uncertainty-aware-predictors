@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.8.18)  15 MAY 2026 11:41
+This is pdfTeX, Version 3.141592653-2.6-1.40.27 (MiKTeX 25.4) (preloaded format=pdflatex 2025.8.18)  18 MAY 2026 18:13
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -779,15 +779,15 @@ Package microtype Info: Loading generic protrusion settings for font family
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 270.
+(hyperref)                removing `math shift' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\rightarrow' on input line 270.
+(hyperref)                removing `\rightarrow' on input line 266.
 
 
 Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 270.
+(hyperref)                removing `math shift' on input line 266.
 
 
 
@@ -812,7 +812,7 @@ Package hyperref Warning: Token not allowed in a PDF string (Unicode):
 [14]
 
 [15]
-Overfull \hbox (12.50467pt too wide) in paragraph at lines 699--700
+Overfull \hbox (12.50467pt too wide) in paragraph at lines 695--696
 []\T1/cmr/bx/n/10.95 Acceptance: \T1/cmr/m/n/10.95 a tidy CSV per sur-ro-gate with \T1/cmtt/m/n/10.95 [features..., y, mu_oof, sigma_epist_oof,
  []
 
@@ -821,14 +821,14 @@ Overfull \hbox (12.50467pt too wide) in paragraph at lines 699--700
 [16]
 
 [17]
-Overfull \hbox (2.35005pt too wide) in paragraph at lines 790--791
+Overfull \hbox (2.35005pt too wide) in paragraph at lines 786--787
 \T1/cmr/m/n/10.95 Weight-e-dEnsem-ble from the trained base learn-ers. Pro-duces non-negative
  []
 
 
 
 [18]
-Overfull \hbox (8.79881pt too wide) in paragraph at lines 813--814
+Overfull \hbox (8.79881pt too wide) in paragraph at lines 809--810
    [] \T1/cmr/m/n/10.95 Variance of a dis-crete dis-tri-bu-tion with non-uniform weights: $[][] \OML/cmm/m/it/10.95 w[]\OT1/cmr/m/n/10.95 (\OML/cmm/m/it/10.95 x[] \OMS/cmsy/m/n/10.95 ^^@
  []
 
@@ -840,20 +840,20 @@ LaTeX2e <2025-06-01> patch level 1
 L3 programming layer <2025-07-20>
  ***********
 Package rerunfilecheck Info: File `copper_digital_twin_v3.out' has not changed.
-(rerunfilecheck)             Checksum: 69F3432830774ADF501F0050B87AB641;8559.
+(rerunfilecheck)             Checksum: 3315E0449D058EDCD074FDFCD9C8F4D1;8438.
  ) 
 Here is how much of TeX's memory you used:
- 30400 strings out of 468134
- 587135 string characters out of 5430740
+ 30399 strings out of 468134
+ 587116 string characters out of 5430740
  1057261 words of memory out of 5000000
- 58395 multiletter control sequences out of 15000+600000
+ 58394 multiletter control sequences out of 15000+600000
  658933 words of font info for 129 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
  98i,19n,101p,1082b,1029s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecti0900.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt1095.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1000.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm0900.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm0600.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm0800.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\tcrm1095.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecti1095.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1200.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1095.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1440.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm1095.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecrm1200.pk> <C:\Users\fmfoa\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ecbx1728.pk><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmbx10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi12.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi8.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi9.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmib10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cmextra/cmmib8.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr12.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr8.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr9.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy8.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy9.pfb><C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on copper_digital_twin_v3.pdf (19 pages, 472902 bytes).
+Output written on copper_digital_twin_v3.pdf (19 pages, 473030 bytes).
 PDF statistics:
- 1067 PDF objects out of 1200 (max. 8388607)
+ 1066 PDF objects out of 1200 (max. 8388607)
  139 named destinations out of 1000 (max. 500000)
- 18733 words of extra memory for PDF output out of 20736 (max. 10000000)
+ 18725 words of extra memory for PDF output out of 20736 (max. 10000000)
 

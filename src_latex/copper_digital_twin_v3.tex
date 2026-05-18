@@ -113,7 +113,7 @@ Because the three processes are applied sequentially, the output of one surrogat
     \item The post-cold-drawing state becomes the initial state of the annealing.
     \item Each pass of cold drawing receives, as input, the predicted state from the previous pass.
 \end{itemize}
-This implies that prediction errors do not stay local: they \textbf{propagate along the chain}, and any serious controller must reason about that propagation explicitly.
+This implies that prediction errors do not stay local: they \textbf{propagate along the chain}, and one must reason about that propagation explicitly.
 
 \subsection{Data}
 
@@ -156,10 +156,6 @@ The mathematical formulation of the controller in deterministic form has already
 
 \paragraph{Direction~2: Move from point predictions to predictive distributions.} Each surrogate will be turned into a model that predicts a Gaussian distribution $\mathcal{N}(\hat\mu(\bm x), \hat\sigma^2(\bm x))$, with the variance decomposed into epistemic and aleatoric components and propagated across the model chain. The same predictive distributions will be used both for risk-aware optimization and for principled data augmentation.
 
-\subsection{Working mode}
-
-This project is orchestrated by a senior LLM (Claude Opus). Implementation tasks --- data wrangling, AutoGluon configurations, training loops, evaluation scripts --- are delegated to a coding LLM (Claude Sonnet / Claude Code in VSCode). The present document is the reference specification for both.
-
 % =====================================================
 \section{Project Decisions and Caveats}
 \label{sec:decisions}
@@ -197,11 +193,11 @@ that hides three things the predictive distribution makes explicit:
     distribution returns a different $\hat\sigma(\bm x)$ at every input.
     \item \textbf{Source of error.} MAE conflates model ignorance (epistemic)
     with intrinsic process noise (aleatoric). The predictive distribution
-    separates them, enabling decisions like ``collect more data here'' vs.
-    ``accept the process noise here''.
+    separates them, enabling decisions like ``collect more data here'' (when epistemic is high) vs.
+    ``accept the process noise here'', or assess the process (when aleatoric is high). So far the epistemic has shown to be the higher component.
     \item \textbf{Asymmetric and probabilistic decisions.} A controller that
-    needs $\Pr(y \geq y_{\text{target}}) \geq 0.9$ cannot extract that
-    probability from MAE alone. It can from a distribution.
+    needs $P(y \geq y_{\text{target}}) \geq 0.9$ cannot extract that
+    probability from MAE alone. It can from a distribution. The format $P(y \geq y_{\text{target}}) \geq X $ is exactly how the digital twin is evaluated. 
 \end{itemize}
 
 \paragraph{A consistency check.} The predictive distribution should not
@@ -244,7 +240,7 @@ considered acceptable when:
 \begin{enumerate}
     \item Its OOF MAE and RMSE match or beat the H2O baseline.
     \item Its calibration is within $\pm 5$ percentage points of nominal
-    at $\alpha = 0.9$ (after scalar recalibration if needed).
+    at $\alpha = 0.9$ (after scalar recalibration if needed). Done in the last step of the pipeline.
 \end{enumerate}
 
 \subsection{Rules of thumb on rows-per-feature}
@@ -330,7 +326,7 @@ The only legitimate distribution-based augmentation in this project is \emph{inp
     \item $\bm x \in \mathbb{R}^d$: input vector to a surrogate.
     \item $y \in \mathbb{R}$: scalar target (grain size, IACS, or UTS).
     \item $\mathcal{D} = \{(\bm x_i, y_i)\}_{i=1}^N$: training dataset, $N \approx 100$.
-    \item $\theta$: parameters of a model (the splits of a tree, the weights of a gradient-boosted ensemble); $\Theta$ is the set of all admissible models.
+    \item $\theta$: parameters of a model (the splits of a tree, the weights of a gradient-boosted ensemble); $\Theta$ is the set of all admissible models \footnote{Normally these parameters will not be acessed.}. 
     \item $f_\theta(\bm x)$: deterministic prediction of model $\theta$ at input $\bm x$, our estimate of $y$.
     \item Symbols with a star ($f_\star, \sigma_\star$) denote unobservable, theoretical quantities used only to give precise meaning to the words ``ground truth'' and ``irreducible noise''. We never compute them; we only build estimators that converge to them.
 \end{itemize}
@@ -629,21 +625,21 @@ For a candidate route $P = (D_0, D_1, \ldots, D_n)$ with state $\bm s_i = (D_i, 
 \end{recapbox}
 
 \begin{equation}
-\Pr\!\big(\text{success} \mid P\big)
+P\!\big(\text{success} \mid P\big)
 \;\approx\;
 \frac{1}{K}\sum_{k=1}^K \mathbf{1}\!\left[U_n^{(k)} \geq U_{\text{target}} \,\wedge\, I_n^{(k)} \geq I_{\text{target}}\right].
 \label{eq:prob-feasibility}
 \end{equation}
 Routes are then ranked by:
 \begin{equation}
-\mathrm{score}(P) \;=\; \Pr\big(\text{success}\big) \;-\; \lambda \cdot n \;-\; \gamma \cdot \!\!\sum_{i=0}^{n-1} s_i,
+\mathrm{score}(P) \;=\; P\big(\text{success}\big) \;-\; \lambda \cdot n \;-\; \gamma \cdot \!\!\sum_{i=0}^{n-1} s_i,
 \label{eq:risk-score}
 \end{equation}
-generalizing the deterministic controller (set all variances to zero $\Rightarrow$ $\Pr \in \{0,1\}$ $\Rightarrow$ original boolean check).
+generalizing the deterministic controller (set all variances to zero $\Rightarrow$ $P \in \{0,1\}$ $\Rightarrow$ original boolean check).
 
 \subsection{Annealing: same machinery, simpler topology}
 
-For annealing, the controller is a 2D grid search over $(T, t)$. At each grid point, Monte Carlo propagates the predictive distribution of grain size into IACS and UTS surrogates, yielding a probability of joint feasibility. The optimization criterion becomes: minimize cost $J(T, t)$ subject to $\Pr(\text{success}) \geq p_{\min}$ (e.g., $p_{\min} = 0.9$).
+For annealing, the controller is a 2D grid search over $(T, t)$. At each grid point, Monte Carlo propagates the predictive distribution of grain size into IACS and UTS surrogates, yielding a probability of joint feasibility. The optimization criterion becomes: minimize cost $J(T, t)$ subject to $P(\text{success}) \geq p_{\min}$ (e.g., $p_{\min} = 0.9$).
 
 \subsection{Input augmentation: rigorous use of upstream variance for downstream training}
 \label{sec:input-aug}
@@ -724,7 +720,7 @@ When a downstream surrogate consumes a feature that, at deployment time, will be
 
 \subsection*{Step 7 --- Risk-aware controllers}
 \begin{itemize}
-    \item Annealing: replace boolean feasibility by $\Pr(\text{success}) \geq p_{\min}$ at each grid point; pick the cheapest feasible.
+    \item Annealing: replace boolean feasibility by $P(\text{success}) \geq p_{\min}$ at each grid point; pick the cheapest feasible.
     \item Cold drawing: rank routes by score~\eqref{eq:risk-score}.
 \end{itemize}
 
@@ -799,7 +795,7 @@ The model's claim is: \emph{``the true $y$ has probability $\alpha$ of being in 
     \item[NNLS (non-negative least squares)] Solver for $\min_{\bm w \geq 0} \|\mathbf{A}\bm w - \bm b\|^2$. Used to recover the AutoGluon ensemble weights without depending on private API.
     \item[OOF (out-of-fold)] A prediction made by a model that did not use the predicted point during training. Honest estimator of generalization error.
     \item[Posterior] In Bayesian terms, $p(\theta \mid \mathcal{D})$. Distribution of plausible models given the data.
-    \item[$\Pr(\text{success})$] The probability that a candidate process configuration meets all final-property targets. Replaces boolean feasibility in the controller.
+    \item[$P(\text{success})$] The probability that a candidate process configuration meets all final-property targets. Replaces boolean feasibility in the controller.
     \item[Predictive distribution] $p(y \mid \bm x, \mathcal{D})$. The probability distribution our model assigns to $y$ at $\bm x$ given everything we have learned.
     \item[Residual vs $\sigma$] The residual is the observable error of \emph{one} prediction; $\hat\sigma$ is the model's estimated width of the predictive distribution. They have the same units but answer different questions.
     \item[Standard deviation $\sigma$] Square root of the variance. Reported to humans; same units as the target.

@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1778838107.97948 "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/copper_digital_twin_v3.tex" "copper_digital_twin_v3.pdf" "copper_digital_twin_v3" 1778838109.46027 0
+["pdflatex"] 1779120799.23479 "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/copper_digital_twin_v3.tex" "copper_digital_twin_v3.pdf" "copper_digital_twin_v3" 1779120800.70933 0
   "C:/Users/fmfoa/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1777388307 80909 eab91d9745dd2edfd62a31d53cd5fe15 ""
   "C:/Users/fmfoa/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/ecbx1000.pk" 1777388315 25420 0d245d27cdc8a3c71aa8b2d2d5797780 ""
   "C:/Users/fmfoa/AppData/Local/MiKTeX/fonts/pk/ljfour/jknappen/ec/dpi600/ecbx1095.pk" 1777388316 28976 a6c5a4d20d40c93714d019ea4c30cee5 ""
@@ -245,11 +245,11 @@
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/trimspaces/trimspaces.sty" 1253169183 1380 971a51b00a14503ddf754cab24c3f209 ""
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/copper_digital_twin_v3.tex" 1778838104 52183 ce2b9eedb8570d6036a0b491e08a61d9 ""
-  "copper_digital_twin_v3.aux" 1778838109 10840 83672a6c1d49b43ab2d0dff2cd8eeb42 "pdflatex"
-  "copper_digital_twin_v3.out" 1778838109 8559 69f3432830774adf501f0050b87ab641 "pdflatex"
-  "copper_digital_twin_v3.tex" 1778838104 52183 ce2b9eedb8570d6036a0b491e08a61d9 ""
-  "copper_digital_twin_v3.toc" 1778838109 5592 9e56462ee361fb10e240f5bba82459ff "pdflatex"
+  "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/copper_digital_twin_v3.tex" 1779120798 52149 0f2f703a36815cc757f5bdcd825ea270 ""
+  "copper_digital_twin_v3.aux" 1779120800 10721 2ebe51a4ffc5ebdd7c2c6737cfb302d7 "pdflatex"
+  "copper_digital_twin_v3.out" 1779120800 8438 3315e0449d058edcd074fdfcd9c8f4d1 "pdflatex"
+  "copper_digital_twin_v3.tex" 1779120798 52149 0f2f703a36815cc757f5bdcd825ea270 ""
+  "copper_digital_twin_v3.toc" 1779120800 5514 1c1f54576749aa0c194799fdf37b59f4 "pdflatex"
   (generated)
   "copper_digital_twin_v3.aux"
   "copper_digital_twin_v3.log"
