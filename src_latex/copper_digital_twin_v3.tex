@@ -146,8 +146,8 @@ Rotary swaging  & Not started & Not started & Not started \\
 
 The mathematical formulation of the controller in deterministic form has already been written:
 \begin{itemize}
-    \item \textbf{Annealing optimization}: a 2D constrained nonlinear optimization over $(T,t)$, solved by dense grid search with feasibility filtering.
-    \item \textbf{Cold drawing optimization}: a graph-based, combinatorial route-selection problem, solved by depth-first enumeration of feasible diameter paths with sequential surrogate evaluation.
+    \item \textbf{Annealing optimization}: a 2D constrained nonlinear optimization over $(T,t)$, solved by dense grid search with feasibility filtering. See \href{https://drive.google.com/file/d/1dMrTbz4iGtGpthyRBU4M1-V0mrxIWbfK/view?usp=drive_link}{\texttt{annealing\_optimization.pdf}}.
+    \item \textbf{Cold drawing optimization}: a graph-based, combinatorial route-selection problem, solved by depth-first enumeration of feasible diameter paths with sequential surrogate evaluation. See \href{https://drive.google.com/file/d/1CmDZxgh3cOcopIMbxvVBxugg_9li79cP/view?usp=drive_link}{\texttt{cold\_drawing\_optimization.pdf}}.
 \end{itemize}
 
 \subsection{Two new directions for the project}
@@ -157,6 +157,7 @@ The mathematical formulation of the controller in deterministic form has already
 \paragraph{Direction~2: Move from point predictions to predictive distributions.} Each surrogate will be turned into a model that predicts a Gaussian distribution $\mathcal{N}(\hat\mu(\bm x), \hat\sigma^2(\bm x))$, with the variance decomposed into epistemic and aleatoric components and propagated across the model chain. The same predictive distributions will be used both for risk-aware optimization and for principled data augmentation.
 
 % =====================================================
+\newpage
 \section{Project Decisions and Caveats}
 \label{sec:decisions}
 % =====================================================
@@ -276,16 +277,20 @@ The migration is justified by:
 The cost is moderately higher training time and memory, both negligible on $\sim 100$ rows.
 \end{decisionbox}
 
-\subsection{Use the ensemble mean, not the ``best model''}
+\subsection{Use weighted mean and variance over the base learners}
 
-\begin{decisionbox}
-A natural temptation is to pick the single best base learner from the ensemble's leaderboard and use only that one. We do \textbf{not} do this. Two reasons:
+
+In order to consider the best prediction using Auto Gluon's internal optimization method, we pick up the best ensemble. However, in order to compute the mean and variance over the chosen base learners we need to unravel the ensemble due to the following reasons:
 
 \begin{itemize}
-    \item For prediction quality: the ensemble \emph{mean} of all $M$ base learners almost always has lower generalization error than any single learner alone (this is one of the foundational results of ensemble learning). Picking a winner discards information.
-    \item For uncertainty: the epistemic variance is, by definition, the dispersion across base learners (eq.~\eqref{eq:sigma-epist}). It cannot be computed without keeping all $M$ models. Using the mean for prediction and the dispersion of the same $M$ models for uncertainty is the only internally consistent choice.
+    \item For prediction quality: a weighted combination of base learners almost always has lower generalization error than any single learner alone — this is one of the foundational results of ensemble learning, and is exactly what AutoGluon's \texttt{WeightedEnsemble\_L2} produces internally.
+    \item For uncertainty: the epistemic variance is, by definition, the dispersion across base learners weighted by the same ensemble weights (eq.~\eqref{eq:sigma-epist-weighted}). It cannot be computed from a single model.
 \end{itemize}
-\end{decisionbox}
+
+The project default is therefore to compute both $\hat\mu$ and $\hat\sigma^2_{\text{epist}}$ as \textbf{weighted statistics over the $M$ base learners}, using the AutoGluon ensemble weights $\bm w$ recovered via NNLS (Section~\ref{sec:epistemic-estimation}). When the NNLS recovery is successful — verified by reconstructing the WeightedEnsemble's OOF prediction within a numerical tolerance — the resulting $\hat\mu$ is numerically identical to the output of \texttt{WeightedEnsemble\_L2}, and $\hat\sigma^2_{\text{epist}}$ is the variance of the same convex combination around that mean.
+
+The implementation flag \texttt{use\_weighted\_variance} toggles between this default and a uniform-statistics fallback (simple arithmetic mean and sample variance over base learners), used as a robustness check when the NNLS recovery is questionable or for diagnostic comparisons.
+
 
 \subsection{Variance is the natural quantity, not standard deviation}
 
@@ -309,11 +314,12 @@ Input-feature jittering is allowed, with two rules:
 
 \subsection{Self-training is not adopted; input augmentation is}
 
-\begin{cautionbox}
-Augmenting the dataset by sampling the surrogate's own predictive distribution and using those samples as new \emph{labels} (self-training, pseudo-labeling) is \textbf{not adopted}. It tends to reinforce model bias on small datasets.
+Augmenting the dataset by sampling the surrogate's own predictive distribution and using those samples as new \textbf{labels} (self-training, pseudo-labeling) is \textbf{not adopted}. It tends to reinforce model bias on small datasets.
 
-The only legitimate distribution-based augmentation in this project is \emph{input augmentation}: when a downstream surrogate consumes a feature predicted by an upstream surrogate, the downstream training data is enriched with several plausible realizations of that upstream feature. The label $y$ stays unchanged. Section~\ref{sec:input-aug} formalizes this.
+\begin{cautionbox}
+The only form of distribution-based augmentation used in this project is \emph{input augmentation}, defined and motivated in Section~\ref{sec:input-aug}. This is conceptually different from self-training: only upstream-predicted \emph{features} are replaced by samples from their predictive distribution; the training labels $y_i$ are kept as their measured values. This distinction is important and is the reason §2.8 and §4 are not in tension.
 \end{cautionbox}
+
 
 % =====================================================
 \section{Mathematical Formalization of Uncertainty}
@@ -326,9 +332,12 @@ The only legitimate distribution-based augmentation in this project is \emph{inp
     \item $\bm x \in \mathbb{R}^d$: input vector to a surrogate.
     \item $y \in \mathbb{R}$: scalar target (grain size, IACS, or UTS).
     \item $\mathcal{D} = \{(\bm x_i, y_i)\}_{i=1}^N$: training dataset, $N \approx 100$.
-    \item $\theta$: parameters of a model (the splits of a tree, the weights of a gradient-boosted ensemble); $\Theta$ is the set of all admissible models \footnote{Normally these parameters will not be acessed.}. 
+    \item $\theta$ denotes a specific trained model --- think of it as ``one hypothesis about the input-output relationship'' (e.g., a particular tree with its specific splits, or a particular gradient-boosted ensemble with its specific weights and structure). The space $\Theta$ is the set of all admissible such models. Treating $\theta$ as a single label for ``a whole model'' is more convenient than tracking a parameter vector explicitly, especially when models are not parameterised by continuous vectors (e.g., decision trees).
     \item $f_\theta(\bm x)$: deterministic prediction of model $\theta$ at input $\bm x$, our estimate of $y$.
     \item Symbols with a star ($f_\star, \sigma_\star$) denote unobservable, theoretical quantities used only to give precise meaning to the words ``ground truth'' and ``irreducible noise''. We never compute them; we only build estimators that converge to them.
+    \item By default, $\hat\mu(\bm x)$ and $\hat\sigma^2_{\text{epist}}(\bm x)$ are the \textbf{weighted} estimators of equations~\eqref{eq:mu-hat-weighted} and~\eqref{eq:sigma-epist-weighted}, with $\bm w$ recovered from the AutoGluon WeightedEnsemble via NNLS. With $\hat\mu(\bm x)$ being the assumed predicted value and $\hat\sigma^2_{\text{epist}}(\bm x)$ being the variance of the models used to choose the $\hat\mu$ prediction. The \textbf{uniform} estimators of equations~\eqref{eq:mu-hat} and~\eqref{eq:sigma-epist} are kept available behind the implementation flag \texttt{use\_weighted\_variance=False} as a robustness check. Throughout the remainder of this document, whenever $\hat\mu$ or $\hat\sigma^2_{\text{epist}}$ appears unqualified, the weighted form is assumed.
+    \item $g_\phi(\bm x)$ denotes Model B — a second regressor, trained separately from $f_\theta$, whose role is to predict the aleatoric variance at any input: $g_\phi(\bm x) \approx \hat\sigma^2_{\text{aleat}}(\bm x)$. The subscript $\phi$ collects the parameters of this model. We use a different letter from $\theta$ to make explicit that Model A and Model B are different models, trained on different targets. When Model B is specific to one surrogate, we annotate it with a superscript: $g_\phi^{\text{CD}}$ is the cold-drawing Model B, $g_\phi^{\text{ANN}}$ is the annealing Model B.
+    \item Nominal coverage $\alpha$. A real number between 0 and 1, representing the \emph{promised} probability that the true $y$ falls inside a given predictive interval. Common choices: $\alpha = 0.5$, $0.8$, $0.9$, $0.95$. It is the \textbf{model's claim} about its own predictions.
 \end{itemize}
 
 The fundamental modeling assumption is that the world is noisy:
@@ -436,8 +445,14 @@ The familiar sample variance $\frac{1}{M}\sum_m (x_m - \bar x)^2$ is the special
 
 \paragraph{Mixture interpretation.} The full predictive distribution is, in fact, a mixture of Gaussians:
 \[
-p(y \mid \bm x) \;=\; \sum_{m=1}^M w_m \, \mathcal{N}\!\big(y;\, f_{\theta_m}(\bm x),\, \sigma^2_{\text{aleat}}(\bm x)\big).
+p(y \mid \bm x) \;=\; \sum_{m=1}^M w_m \, \mathcal{N}\!\big(y;\, f_{\theta_m}(\bm x),\, \sigma^2_{\text{aleat}}(\bm x)\big),
 \]
+where $\mathcal{N}(y;\, \mu, \sigma^2)$ denotes the value of the Gaussian density with mean $\mu$ and variance $\sigma^2$ evaluated at the point $y$.\footnote{This is distinct from $y \sim \mathcal{N}(\mu, \sigma^2)$, which is a statement that $y$ is a random variable with that distribution. The semicolon notation lets us add densities as functions of $y$, which is exactly what a mixture is.}
+
+% \paragraph{Mixture interpretation.} The full predictive distribution is, in fact, a mixture of Gaussians:
+% \[
+% p(y \mid \bm x) \;=\; \sum_{m=1}^M w_m \, \mathcal{N}\!\big(y;\, f_{\theta_m}(\bm x),\, \sigma^2_{\text{aleat}}(\bm x)\big).
+% \]
 We approximate this mixture by a single Gaussian whose first two moments match the mixture's. By the law of total variance, this yields exactly~\eqref{eq:mu-hat-weighted} and the total variance
 \[
 \sigma^2_{\text{total}}(\bm x) =
@@ -479,6 +494,42 @@ The error of a single prediction is the residual $r_i = y_i - \hat\mu(\bm x_i)$,
 
 A correctly calibrated model will produce residuals whose magnitude is comparable to its reported $\hat\sigma$ on average --- never exactly equal, because a residual is one realisation while $\hat\sigma$ is a population parameter. For example, a prediction $\hat\mu = 100.7$ with $\hat\sigma = 3.15$ on a row where the true value is $103$ means the model asserts a 95\% interval of $[94.5,\, 106.9]$, which contains the true value: this prediction is fine, not bad, despite the absolute error of $2.3$ being smaller than $\hat\sigma$. The residual and $\hat\sigma$ live on the same scale but answer different questions.
 \end{recapbox}
+
+\subsection{Calibration vocabulary: nominal coverage \texorpdfstring{$\alpha$}{alpha}, quantile \texorpdfstring{$z_\alpha$}{z-alpha}, empirical coverage}
+\label{sec:calibration-vocab}
+
+Calibration is the procedure that verifies whether the predictive distribution emitted by the model matches reality in the relevant sense. Section~\ref{sec:calibration-explained} performs the test on real data; here we fix the vocabulary.
+
+\paragraph{Standard normal quantile $z_\alpha$.} For a Gaussian predictive distribution $y \mid \bm x \sim \mathcal{N}(\hat\mu, \hat\sigma^2)$, the central interval of probability $\alpha$ is
+\[
+\big[\hat\mu - z_\alpha \, \hat\sigma,\; \hat\mu + z_\alpha \, \hat\sigma\big],
+\]
+where $z_\alpha$ is the number such that a standard Gaussian $Z \sim \mathcal{N}(0, 1)$ satisfies $P(-z_\alpha \leq Z \leq z_\alpha) = \alpha$. Equivalently, $z_\alpha = \Phi^{-1}\!\left(\tfrac{1+\alpha}{2}\right)$, where $\Phi$ is the standard normal CDF.
+
+\begin{recapbox}
+For $\alpha = 0.95$, the standard Gaussian places $2.5\%$ of its mass below $-1.960$ and $2.5\%$ above $+1.960$. So the central $95\%$ interval is exactly $[-1.960,\, +1.960]$ in standard units. Translated back to a generic Gaussian $\mathcal{N}(\hat\mu, \hat\sigma^2)$, this gives $[\hat\mu - 1.96\hat\sigma,\, \hat\mu + 1.96\hat\sigma]$. A small table of quantiles:
+\[
+z_{0.50} = 0.674, \quad z_{0.80} = 1.282, \quad z_{0.90} = 1.645, \quad z_{0.95} = 1.960, \quad z_{0.99} = 2.576.
+\]
+\end{recapbox}
+
+\paragraph{Empirical coverage.} A real number between 0 and 1, representing the \emph{observed} fraction of test points whose true $y$ actually falls inside the predicted interval at nominal $\alpha$:
+\[
+\widehat{\text{coverage}}(\alpha) \;=\; \frac{1}{N}\sum_{i=1}^N \mathbf{1}\!\left[\hat\mu_i - z_\alpha \hat\sigma_i \leq y_i \leq \hat\mu_i + z_\alpha \hat\sigma_i\right].
+\]
+This is the \textbf{empirical reality check} of the model's claim.
+
+\paragraph{Calibration as $\widehat{\text{coverage}}(\alpha) \approx \alpha$.} A model is well-calibrated when, for every $\alpha$, the empirical coverage matches the nominal one. Two failure modes:
+\begin{itemize}
+    \item $\widehat{\text{coverage}}(\alpha) < \alpha$: the predicted intervals are \emph{too narrow}; the model is \textbf{overconfident}.
+    \item $\widehat{\text{coverage}}(\alpha) > \alpha$: the predicted intervals are \emph{too wide}; the model is \textbf{underconfident}.
+\end{itemize}
+
+\paragraph{Scalar recalibration.} A simple, widely used correction. If empirical coverage is systematically off, fit a single multiplicative constant $c > 0$ such that the rescaled standard deviation $c \cdot \hat\sigma$ produces empirical coverage close to nominal at a chosen target level (e.g., $\alpha = 0.9$). Section~\ref{sec:calibration-explained} executes this step on out-of-fold predictions.
+
+\begin{cautionbox}
+\textbf{Honesty of the estimate.} The fitting of $c$ on the same data used to assess calibration is mildly optimistic. With $N \approx 100$ rows, splitting becomes prohibitive. The bias is acceptable for the current stage and should be revisited once more data is available.
+\end{cautionbox}
 
 \subsection{Out-of-fold residuals}
 \label{sec:oof}
@@ -534,7 +585,7 @@ Together they yield a Gaussian predictive distribution at every input.
 \tilde r_i^{\,2} \;=\; \max\!\Big( (r_i^{\text{OOF}})^2 \;-\; \hat\sigma^2_{\text{epist}}(\bm x_i),\; 0 \Big).
 \label{eq:residual-correction}
 \end{equation}
-The squared OOF residual contains both aleatoric and epistemic contributions; subtracting the (already estimated) epistemic part isolates the aleatoric one. Truncation at zero prevents the rare cases where the ensemble dispersion exceeds the squared residual.
+The squared OOF residual contains both aleatoric and epistemic contributions; subtracting the (already estimated) epistemic part isolates the aleatoric one. Truncation at zero handles cases where the ensemble dispersion exceeds the squared residual at a given point. Empirically this is \emph{not rare}: on the annealing IACS surrogate, roughly $47\%$ of training rows truncate to zero. A high truncation rate is a diagnostic signal, not an error condition: it indicates that the epistemic variance is comparable to or larger than the average squared residual in much of the input space, which is plausible when the model has already converged to good predictions and only the irreducible noise remains. The truncated values still carry information for Model B --- they say ``aleatoric variance is small here''.
 
 \begin{recapbox}
 \textbf{Two objects, easily confused, with the same conceptual meaning.}
@@ -569,7 +620,7 @@ with $\hat\mu(\bm x)$ and $\hat\sigma^2_{\text{epist}}(\bm x)$ given by the weig
 
 \subsection{Two kinds of chaining}
 
-\paragraph{Chain type~1 --- intra-process feature chaining.} Within a single process step, the grain-size surrogate is called first, and its prediction becomes a feature of the IACS and UTS surrogates of the same step.
+\paragraph{Chain type~1 --- intra-process feature chaining.} Within a single process step, the grain-size surrogate is called first, and its prediction becomes a feature of the IACS and (possibly) UTS surrogates of the same step.
 
 \paragraph{Chain type~2 --- inter-pass / inter-step state chaining.} Between successive cold-drawing passes (or annealing cycles), the predicted post-pass state becomes the initial state of the next pass.
 
@@ -601,22 +652,84 @@ Typical value: $K = 200$. Cost is negligible for tree ensembles.
 \textbf{Common confusion: do the $K$ Monte Carlo samples become rows in the dataset?} \textbf{No.} The $K$ samples exist only in memory, during the prediction of one input. The output is a single $\hat\mu_2$ and a single $\hat\sigma^2_2$ per query input. The dataset is not expanded. (Section~\ref{sec:input-aug} describes a different procedure that \emph{does} expand the dataset, but only for training, not inference.)
 \end{cautionbox}
 
-\subsection{Recursive propagation through cold drawing}
+% \subsection{Recursive propagation through cold drawing}
 
-For a candidate route $P = (D_0, D_1, \ldots, D_n)$ with state $\bm s_i = (D_i, U_i, I_i, \mathrm{GS}_i)$:
+% For a candidate route $P = (D_0, D_1, \ldots, D_n)$ with state $\bm s_i = (D_i, U_i, I_i, \mathrm{GS}_i)$:
+
+% \begin{enumerate}
+%     \item Initialize $\bm s_0^{(k)} = \bm s_0$ for $k = 1, \ldots, K$.
+%     \item For each pass $i = 0, \ldots, n-1$:
+%     \begin{enumerate}
+%         \item Draw a base learner $m_k$ uniformly from the cold-drawing ensemble for each sample $k$.
+%         \item $\tilde{\bm s}_{i+1}^{(k)} = f_{\text{CD}, \theta_{m_k}}(\bm s_i^{(k)}, u_i, \bm x^{(0)}_{\text{orig}})$.
+%         \item Inject the aleatoric component: $\bm s_{i+1}^{(k)} = \tilde{\bm s}_{i+1}^{(k)} + \bm\eta_{i+1}^{(k)}$ with $\bm\eta_{i+1}^{(k)} \sim \mathcal{N}(0, \mathrm{diag}(g_\phi^{\text{CD}}(\tilde{\bm s}_{i+1}^{(k)})))$.
+%     \end{enumerate}
+%     \item $\{\bm s_n^{(k)}\}_{k=1}^K$ is the empirical distribution of the final state.
+% \end{enumerate}
+
+\subsection{Recursive propagation through cold drawing}
+\label{sec:propagation-cd}
+
+The cold-drawing surrogate predicts the post-pass material state from the pre-pass material state. Across $n$ passes, the same surrogate is applied recursively, with the output of pass $i$ becoming the input of pass $i+1$.
+
+\begin{recapbox}
+\textbf{Scope of this subsection.} We describe how to propagate the predictive \emph{distribution} of the material state along a cold-drawing route. The route itself --- the sequence of die diameters and the cost-vs-success trade-off that picks one route over another --- belongs to the controller and is described in the companion document on cold-drawing optimization. Here we focus only on how uncertainty flows along a route, regardless of which route the controller eventually selects.
+\end{recapbox}
+
+Let $\bm s_i = (D_i, U_i, I_i, \mathrm{GS}_i)$ be the material state \emph{before} pass $i$. We run $K$ Monte Carlo trajectories in parallel (typical value: $K = 200$):
 
 \begin{enumerate}
-    \item Initialize $\bm s_0^{(k)} = \bm s_0$ for $k = 1, \ldots, K$.
-    \item For each pass $i = 0, \ldots, n-1$:
+    \item \textbf{Initialise.} For each $k = 1, \ldots, K$, set $\bm s_0^{(k)} = \bm s_0$, the (deterministic) initial material state. All $K$ trajectories start identical.
+
+    \item \textbf{Propagate every trajectory through every pass.} For each pass $i = 0, \ldots, n-1$ and each trajectory $k$:
     \begin{enumerate}
-        \item Draw a base learner $m_k$ uniformly from the cold-drawing ensemble for each sample $k$.
-        \item $\tilde{\bm s}_{i+1}^{(k)} = f_{\text{CD}, \theta_{m_k}}(\bm s_i^{(k)}, u_i, \bm x^{(0)}_{\text{orig}})$.
-        \item Inject the aleatoric component: $\bm s_{i+1}^{(k)} = \tilde{\bm s}_{i+1}^{(k)} + \bm\eta_{i+1}^{(k)}$ with $\bm\eta_{i+1}^{(k)} \sim \mathcal{N}(0, \mathrm{diag}(g_\phi^{\text{CD}}(\tilde{\bm s}_{i+1}^{(k)})))$.
+        \item \emph{Sample a base learner.} Draw an index $m_k \in \{1, \ldots, M\}$ uniformly from the $M$ base learners of the cold-drawing Model A. The notation $m_k$ is the index of the model selected for trajectory $k$ at the current pass; the selected model is $\theta_{m_k}$, and this index is resampled independently at every pass. The corresponding predictor function $f_{\theta_{m_k}}$ appears below when the model is actually applied.\footnote{Sampling a different base learner per trajectory is what propagates the \emph{epistemic} component of uncertainty. The same idea underlies Bayesian neural-network inference with active dropout (Gal \& Ghahramani, 2016): each forward pass uses a different stochastic version of the model, simulating draws from an approximate posterior over models.}
+
+        \item \emph{Compute the deterministic step.} Apply the chosen base learner to the current state to obtain a noise-free predicted next state:
+        \[
+        \tilde{\bm s}_{i+1}^{(k)} = f_{\theta_{m_k}}\!\big(\bm s_i^{(k)}\big).
+        \]
+
+        \item \emph{Inject aleatoric noise into the new state.} Sample a noise vector and add it:
+        \[
+        \bm s_{i+1}^{(k)} = \tilde{\bm s}_{i+1}^{(k)} + \bm\eta_{i+1}^{(k)},
+        \quad
+        \bm\eta_{i+1}^{(k)} \sim \mathcal{N}\!\Big(0,\, \mathrm{diag}\big(g_\phi^{\text{CD}}(\tilde{\bm s}_{i+1}^{(k)})\big)\Big),
+        \]
+        where $g_\phi^{\text{CD}}$ is the cold-drawing Model B (see §\ref{sec:variance-model}).
     \end{enumerate}
-    \item $\{\bm s_n^{(k)}\}_{k=1}^K$ is the empirical distribution of the final state.
+
+    \item \textbf{Collect the empirical distribution.} After the last pass, $\{\bm s_n^{(k)}\}_{k=1}^K$ forms an empirical sample from the predictive distribution of the final material state. The route's predicted $\hat{\bm\mu}_n$ and $\hat{\bm\Sigma}_n$ are the sample mean and covariance.
 \end{enumerate}
 
-\subsection{From feasibility to probabilistic feasibility}
+\begin{intuitionbox}
+\textbf{Why inject noise at every pass instead of only at the end?} The output of pass $i$ becomes the input of pass $i+1$. If we propagated only the mean $\hat\mu_{i+1}$ forward, every trajectory $k$ would feed the same (deterministic) state into pass $i+1$, and the aleatoric variance at pass $i$ would be silently dropped from the recursion. By sampling $\bm\eta_{i+1}^{(k)}$ at each step we ensure that trajectories diverge as they should, and the variance of the final state $\bm s_n^{(k)}$ correctly accumulates contributions from every preceding pass.
+
+This is exactly what does \emph{not} happen in a single-pass setting like annealing: there, the upstream variance enters once and we can read off the final distribution from a single application of equation~\eqref{eq:predictive-dist}. In cold drawing, with $n$ passes, the variance must propagate $n$ times --- and Monte Carlo with re-sampled noise at each pass is the natural way to do it.
+\end{intuitionbox}
+
+% \subsection{From feasibility to probabilistic feasibility}
+
+% \begin{recapbox}
+% \textbf{Boolean feasibility} (deterministic version): a route either passes or fails the constraint $U_n \geq U_{\text{target}}$ AND $I_n \geq I_{\text{target}}$. The answer is a single bit per route.
+
+% \textbf{Probabilistic feasibility}: $U_n$ and $I_n$ are now distributions, so we ask \emph{how likely} the constraint is satisfied. The answer is a number in $[0, 1]$ per route.
+% \end{recapbox}
+
+% \begin{equation}
+% P\!\big(\text{success} \mid P\big)
+% \;\approx\;
+% \frac{1}{K}\sum_{k=1}^K \mathbf{1}\!\left[U_n^{(k)} \geq U_{\text{target}} \,\wedge\, I_n^{(k)} \geq I_{\text{target}}\right].
+% \label{eq:prob-feasibility}
+% \end{equation}
+% Routes are then ranked by:
+% \begin{equation}
+% \mathrm{score}(P) \;=\; P\big(\text{success}\big) \;-\; \lambda \cdot n \;-\; \gamma \cdot \!\!\sum_{i=0}^{n-1} s_i,
+% \label{eq:risk-score}
+% \end{equation}
+% generalizing the deterministic controller (set all variances to zero $\Rightarrow$ $P \in \{0,1\}$ $\Rightarrow$ original boolean check).
+
+\subsection{From feasibility to probabilistic feasibility (cold drawing)}
 
 \begin{recapbox}
 \textbf{Boolean feasibility} (deterministic version): a route either passes or fails the constraint $U_n \geq U_{\text{target}}$ AND $I_n \geq I_{\text{target}}$. The answer is a single bit per route.
@@ -624,28 +737,48 @@ For a candidate route $P = (D_0, D_1, \ldots, D_n)$ with state $\bm s_i = (D_i, 
 \textbf{Probabilistic feasibility}: $U_n$ and $I_n$ are now distributions, so we ask \emph{how likely} the constraint is satisfied. The answer is a number in $[0, 1]$ per route.
 \end{recapbox}
 
+Let $K$ denote the number of Monte Carlo trajectories propagated through the route (typical value: $K = 200$). The probabilistic feasibility of a candidate route $P$ is estimated as
 \begin{equation}
 P\!\big(\text{success} \mid P\big)
 \;\approx\;
-\frac{1}{K}\sum_{k=1}^K \mathbf{1}\!\left[U_n^{(k)} \geq U_{\text{target}} \,\wedge\, I_n^{(k)} \geq I_{\text{target}}\right].
+\frac{1}{K}\sum_{k=1}^K \mathbf{1}\!\left[U_n^{(k)} \geq U_{\text{target}} \,\wedge\, I_n^{(k)} \geq I_{\text{target}}\right],
 \label{eq:prob-feasibility}
 \end{equation}
-Routes are then ranked by:
+where $U_n^{(k)}, I_n^{(k)}$ are the UTS and IACS at the final pass for the $k$-th trajectory, obtained via the recursion of §\ref{sec:propagation-cd}.
+
+Routes can then be ranked by a score combining feasibility probability with penalties for process complexity:
 \begin{equation}
 \mathrm{score}(P) \;=\; P\big(\text{success}\big) \;-\; \lambda \cdot n \;-\; \gamma \cdot \!\!\sum_{i=0}^{n-1} s_i,
 \label{eq:risk-score}
 \end{equation}
-generalizing the deterministic controller (set all variances to zero $\Rightarrow$ $P \in \{0,1\}$ $\Rightarrow$ original boolean check).
+where:
+\begin{itemize}
+    \item $n$ is the number of drawing passes in the route (penalises long routes — more tool wear, more time);
+    \item $s_i$ is the diameter reduction at pass $i$ (penalises aggressive cumulative reductions);
+    \item $\lambda > 0$ and $\gamma > 0$ are user-chosen weights that set the trade-off between probabilistic success and process complexity. They are not learned from data; they encode the plant-floor preferences of whoever is making the decision.
+    \item So far, as a validation procedure, we will consider  $\lambda = 0$ and $\gamma = 0$.
+\end{itemize}
+
+This formulation strictly generalises the deterministic controller: setting all variances to zero makes $P(\text{success}) \in \{0, 1\}$, recovering the original boolean check, and the score becomes a simple cost minimisation among feasible routes.
 
 \subsection{Annealing: same machinery, simpler topology}
 
 For annealing, the controller is a 2D grid search over $(T, t)$. At each grid point, Monte Carlo propagates the predictive distribution of grain size into IACS and UTS surrogates, yielding a probability of joint feasibility. The optimization criterion becomes: minimize cost $J(T, t)$ subject to $P(\text{success}) \geq p_{\min}$ (e.g., $p_{\min} = 0.9$).
 
+% \subsection{The annealing case}
+
+% The same Monte Carlo machinery applies to the annealing process, with two differences: the chain is shorter (only one process step instead of $n$ passes) and the upstream input is a single predicted post-cold-drawing state rather than a recursion. The propagation logic stays identical at the level of this document; the controller-side details (grid search over $(T, t)$, cost function, probabilistic feasibility threshold) are out of scope here and live in the annealing companion document referenced in §\ref{sec:overview}.
+
 \subsection{Input augmentation: rigorous use of upstream variance for downstream training}
 \label{sec:input-aug}
 
 \begin{recapbox}
-\textbf{This is the only place where upstream variance enters the downstream dataset.} It is a training-time procedure, distinct from inference-time Monte Carlo propagation. At inference, no rows are added; here, rows are added to the training table.
+\textbf{Two distinct moments where upstream uncertainty enters the downstream model.}
+\begin{itemize}
+    \item \textbf{At inference time} (§\ref{sec:propagation}): the Monte Carlo procedure samples from the upstream predictive distribution and runs the downstream surrogate on each sample. No training data is modified; the $K$ samples live in memory during one prediction. This is described in the previous subsections.
+    \item \textbf{At training time} (this subsection): the downstream training set is augmented with multiple realisations of the upstream-predicted feature, with the label $y$ held fixed. This teaches the downstream surrogate to be robust to noisy upstream inputs.
+\end{itemize}
+This subsection covers only the second case. Both are valid; both are used; they operate at different stages.
 \end{recapbox}
 
 When a downstream surrogate consumes a feature that, at deployment time, will be a prediction $\hat\mu_1$ contaminated by error $\hat\sigma_1$, the training set should reflect that fact:
@@ -710,6 +843,8 @@ When a downstream surrogate consumes a feature that, at deployment time, will be
     \item If miscalibrated, fit a scalar $c$ on a held-out fold and rescale $\hat\sigma \to c \, \hat\sigma$.
     \item \textbf{Acceptance:} empirical coverage within $\pm 5$ percentage points of nominal at $\alpha = 0.9$.
 \end{itemize}
+
+From here on, the steps are involving the model base controller (digital twin) interaction.
 
 \subsection*{Step 6 --- Implement Monte Carlo propagation}
 \begin{itemize}

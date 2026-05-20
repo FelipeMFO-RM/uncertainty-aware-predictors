@@ -9,7 +9,7 @@
 \newlabel{sec:overview}{{1}{2}{Project Overview and Scope}{section.1}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.1}Goal}{2}{subsection.1.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Why surrogates must be chained}{2}{subsection.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Data}{2}{subsection.1.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Data}{3}{subsection.1.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.4}Current MVP status}{3}{subsection.1.4}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces MVP performance per surrogate model (qualitative).}}{3}{table.1}\protected@file@percent }
 \newlabel{tab:status}{{1}{3}{MVP performance per surrogate model (qualitative)}{table.1}{}}
@@ -17,10 +17,10 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {1.6}Two new directions for the project}{3}{subsection.1.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Direction~1: Migrate AutoML backend from H2O to AutoGluon.}{3}{section*.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Direction~2: Move from point predictions to predictive distributions.}{3}{section*.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {2}Project Decisions and Caveats}{3}{section.2}\protected@file@percent }
-\newlabel{sec:decisions}{{2}{3}{Project Decisions and Caveats}{section.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}From deterministic MAE/MAPE to predictive distributions}{3}{subsection.2.1}\protected@file@percent }
-\newlabel{sec:mae-to-distribution}{{2.1}{3}{From deterministic MAE/MAPE to predictive distributions}{subsection.2.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Project Decisions and Caveats}{4}{section.2}\protected@file@percent }
+\newlabel{sec:decisions}{{2}{4}{Project Decisions and Caveats}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}From deterministic MAE/MAPE to predictive distributions}{4}{subsection.2.1}\protected@file@percent }
+\newlabel{sec:mae-to-distribution}{{2.1}{4}{From deterministic MAE/MAPE to predictive distributions}{subsection.2.1}{}}
 \@writefile{toc}{\contentsline {paragraph}{Why the analogy is partially correct.}{4}{section*.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Why the analogy is incomplete.}{4}{section*.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{A consistency check.}{4}{section*.6}\protected@file@percent }
@@ -28,67 +28,74 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Rules of thumb on rows-per-feature}{5}{subsection.2.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Cold drawing rows are not i.i.d.}{5}{subsection.2.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.4}H2O $\rightarrow $ AutoGluon migration}{5}{subsection.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Use the ensemble mean, not the ``best model''}{6}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Use weighted mean and variance over the base learners}{6}{subsection.2.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Variance is the natural quantity, not standard deviation}{6}{subsection.2.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Physical noise injection}{6}{subsection.2.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.8}Self-training is not adopted; input augmentation is}{6}{subsection.2.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.8}Self-training is not adopted; input augmentation is}{7}{subsection.2.8}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {3}Mathematical Formalization of Uncertainty}{7}{section.3}\protected@file@percent }
 \newlabel{sec:math}{{3}{7}{Mathematical Formalization of Uncertainty}{section.3}{}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Notation}{7}{subsection.3.1}\protected@file@percent }
-\newlabel{eq:data-model}{{1}{7}{Notation}{equation.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Bayesian view of the predictive distribution}{7}{subsection.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Why the Bayesian framing?}{7}{section*.8}\protected@file@percent }
+\newlabel{eq:data-model}{{1}{8}{Notation}{equation.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Bayesian view of the predictive distribution}{8}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Why the Bayesian framing?}{8}{section*.8}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{The predictive distribution.}{8}{section*.9}\protected@file@percent }
 \newlabel{eq:posterior-predictive}{{2}{8}{The predictive distribution}{equation.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Decomposition: epistemic vs.\ aleatoric}{8}{subsection.3.3}\protected@file@percent }
-\newlabel{eq:total-variance-decomp}{{3}{8}{Decomposition: epistemic vs.\ aleatoric}{equation.3}{}}
-\@writefile{toc}{\contentsline {paragraph}{Epistemic uncertainty.}{8}{section*.10}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Aleatoric uncertainty.}{8}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Decomposition: epistemic vs.\ aleatoric}{9}{subsection.3.3}\protected@file@percent }
+\newlabel{eq:total-variance-decomp}{{3}{9}{Decomposition: epistemic vs.\ aleatoric}{equation.3}{}}
+\@writefile{toc}{\contentsline {paragraph}{Epistemic uncertainty.}{9}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Aleatoric uncertainty.}{9}{section*.11}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Estimating epistemic uncertainty from the AutoGluon ensemble}{9}{subsection.3.4}\protected@file@percent }
 \newlabel{sec:epistemic-estimation}{{3.4}{9}{Estimating epistemic uncertainty from the AutoGluon ensemble}{subsection.3.4}{}}
-\@writefile{toc}{\contentsline {paragraph}{Uniform estimator (simplest form).}{9}{section*.12}\protected@file@percent }
-\newlabel{eq:mu-hat}{{4}{9}{Uniform estimator (simplest form)}{equation.4}{}}
-\newlabel{eq:sigma-epist}{{5}{9}{Uniform estimator (simplest form)}{equation.5}{}}
-\@writefile{toc}{\contentsline {paragraph}{Weighted estimator (project default).}{9}{section*.13}\protected@file@percent }
-\newlabel{eq:mu-hat-weighted}{{6}{9}{Weighted estimator (project default)}{equation.6}{}}
-\newlabel{eq:sigma-epist-weighted}{{7}{9}{Weighted estimator (project default)}{equation.7}{}}
+\@writefile{toc}{\contentsline {paragraph}{Uniform estimator (simplest form).}{10}{section*.12}\protected@file@percent }
+\newlabel{eq:mu-hat}{{4}{10}{Uniform estimator (simplest form)}{equation.4}{}}
+\newlabel{eq:sigma-epist}{{5}{10}{Uniform estimator (simplest form)}{equation.5}{}}
+\@writefile{toc}{\contentsline {paragraph}{Weighted estimator (project default).}{10}{section*.13}\protected@file@percent }
+\newlabel{eq:mu-hat-weighted}{{6}{10}{Weighted estimator (project default)}{equation.6}{}}
+\newlabel{eq:sigma-epist-weighted}{{7}{10}{Weighted estimator (project default)}{equation.7}{}}
 \@writefile{toc}{\contentsline {paragraph}{Mixture interpretation.}{10}{section*.14}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Recovering $\bm  {w}$ in practice: non-negative least squares.}{10}{section*.15}\protected@file@percent }
-\newlabel{eq:nnls}{{8}{10}{Recovering $\bm w$ in practice: non-negative least squares}{equation.8}{}}
-\@writefile{toc}{\contentsline {paragraph}{Sanity check of the recovery.}{10}{section*.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Recovering $\bm  {w}$ in practice: non-negative least squares.}{11}{section*.15}\protected@file@percent }
+\newlabel{eq:nnls}{{8}{11}{Recovering $\bm w$ in practice: non-negative least squares}{equation.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Sanity check of the recovery.}{11}{section*.16}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Implementation flag.}{11}{section*.17}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Interpreting $\hat  \sigma $: it is not the residual}{11}{subsection.3.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Out-of-fold residuals}{11}{subsection.3.6}\protected@file@percent }
-\newlabel{sec:oof}{{3.6}{11}{Out-of-fold residuals}{subsection.3.6}{}}
-\newlabel{eq:oof-residuals}{{9}{12}{Out-of-fold residuals}{equation.9}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Two-model architecture: mean model and variance model}{12}{subsection.3.7}\protected@file@percent }
-\newlabel{sec:variance-model}{{3.7}{12}{Two-model architecture: mean model and variance model}{subsection.3.7}{}}
-\@writefile{toc}{\contentsline {paragraph}{Model A --- the mean model.}{12}{section*.18}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Model B --- the variance (aleatoric) model.}{12}{section*.19}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Model B's training target.}{12}{section*.20}\protected@file@percent }
-\newlabel{eq:residual-correction}{{10}{12}{Model B's training target}{equation.10}{}}
-\@writefile{toc}{\contentsline {paragraph}{Why Model B does not take $\hat  \mu (\bm  {x})$ as a feature.}{12}{section*.21}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Practical detail: train Model B in log space.}{12}{section*.22}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.8}Final predictive distribution per surrogate}{13}{subsection.3.8}\protected@file@percent }
-\newlabel{eq:predictive-dist}{{11}{13}{Final predictive distribution per surrogate}{equation.11}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4}Error Propagation Across Chained Surrogates}{13}{section.4}\protected@file@percent }
-\newlabel{sec:propagation}{{4}{13}{Error Propagation Across Chained Surrogates}{section.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Two kinds of chaining}{13}{subsection.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Chain type~1 --- intra-process feature chaining.}{13}{section*.23}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Chain type~2 --- inter-pass / inter-step state chaining.}{13}{section*.24}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Production strategy: Monte Carlo propagation}{13}{subsection.4.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Recursive propagation through cold drawing}{14}{subsection.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}From feasibility to probabilistic feasibility}{14}{subsection.4.4}\protected@file@percent }
-\newlabel{eq:prob-feasibility}{{12}{14}{From feasibility to probabilistic feasibility}{equation.12}{}}
-\newlabel{eq:risk-score}{{13}{14}{From feasibility to probabilistic feasibility}{equation.13}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Annealing: same machinery, simpler topology}{14}{subsection.4.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Input augmentation: rigorous use of upstream variance for downstream training}{15}{subsection.4.6}\protected@file@percent }
-\newlabel{sec:input-aug}{{4.6}{15}{Input augmentation: rigorous use of upstream variance for downstream training}{subsection.4.6}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Project Roadmap: Step by Step}{15}{section.5}\protected@file@percent }
-\newlabel{sec:roadmap}{{5}{15}{Project Roadmap: Step by Step}{section.5}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Calibration: What $\alpha $ Really Is}{17}{section.6}\protected@file@percent }
-\newlabel{sec:calibration-explained}{{6}{17}{Calibration: What \texorpdfstring {$\alpha $}{alpha} Really Is}{section.6}{}}
-\@writefile{toc}{\contentsline {paragraph}{The test.}{17}{section*.38}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Recalibration.}{17}{section*.39}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{Glossary}{17}{section*.40}\protected@file@percent }
-\gdef \@abspage@last{19}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Interpreting $\hat  \sigma $: it is not the residual}{12}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Calibration vocabulary: nominal coverage $\alpha $, quantile $z_\alpha $, empirical coverage}{12}{subsection.3.6}\protected@file@percent }
+\newlabel{sec:calibration-vocab}{{3.6}{12}{Calibration vocabulary: nominal coverage \texorpdfstring {$\alpha $}{alpha}, quantile \texorpdfstring {$z_\alpha $}{z-alpha}, empirical coverage}{subsection.3.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{Standard normal quantile $z_\alpha $.}{12}{section*.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Empirical coverage.}{12}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Calibration as $\setbox \z@ \hbox {\mathsurround \z@ $\textstyle \text  {coverage}$}\mathaccent "0362{\text  {coverage}}(\alpha ) \approx \alpha $.}{12}{section*.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Scalar recalibration.}{13}{section*.21}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Out-of-fold residuals}{13}{subsection.3.7}\protected@file@percent }
+\newlabel{sec:oof}{{3.7}{13}{Out-of-fold residuals}{subsection.3.7}{}}
+\newlabel{eq:oof-residuals}{{9}{13}{Out-of-fold residuals}{equation.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.8}Two-model architecture: mean model and variance model}{13}{subsection.3.8}\protected@file@percent }
+\newlabel{sec:variance-model}{{3.8}{13}{Two-model architecture: mean model and variance model}{subsection.3.8}{}}
+\@writefile{toc}{\contentsline {paragraph}{Model A --- the mean model.}{13}{section*.22}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Model B --- the variance (aleatoric) model.}{14}{section*.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Model B's training target.}{14}{section*.24}\protected@file@percent }
+\newlabel{eq:residual-correction}{{10}{14}{Model B's training target}{equation.10}{}}
+\@writefile{toc}{\contentsline {paragraph}{Why Model B does not take $\hat  \mu (\bm  {x})$ as a feature.}{14}{section*.25}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Practical detail: train Model B in log space.}{14}{section*.26}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.9}Final predictive distribution per surrogate}{14}{subsection.3.9}\protected@file@percent }
+\newlabel{eq:predictive-dist}{{11}{14}{Final predictive distribution per surrogate}{equation.11}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Error Propagation Across Chained Surrogates}{15}{section.4}\protected@file@percent }
+\newlabel{sec:propagation}{{4}{15}{Error Propagation Across Chained Surrogates}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Two kinds of chaining}{15}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Chain type~1 --- intra-process feature chaining.}{15}{section*.27}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Chain type~2 --- inter-pass / inter-step state chaining.}{15}{section*.28}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Production strategy: Monte Carlo propagation}{15}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Recursive propagation through cold drawing}{15}{subsection.4.3}\protected@file@percent }
+\newlabel{sec:propagation-cd}{{4.3}{15}{Recursive propagation through cold drawing}{subsection.4.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}From feasibility to probabilistic feasibility (cold drawing)}{17}{subsection.4.4}\protected@file@percent }
+\newlabel{eq:prob-feasibility}{{12}{17}{From feasibility to probabilistic feasibility (cold drawing)}{equation.12}{}}
+\newlabel{eq:risk-score}{{13}{17}{From feasibility to probabilistic feasibility (cold drawing)}{equation.13}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Annealing: same machinery, simpler topology}{17}{subsection.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Input augmentation: rigorous use of upstream variance for downstream training}{18}{subsection.4.6}\protected@file@percent }
+\newlabel{sec:input-aug}{{4.6}{18}{Input augmentation: rigorous use of upstream variance for downstream training}{subsection.4.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Project Roadmap: Step by Step}{18}{section.5}\protected@file@percent }
+\newlabel{sec:roadmap}{{5}{18}{Project Roadmap: Step by Step}{section.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {6}Calibration: What $\alpha $ Really Is}{20}{section.6}\protected@file@percent }
+\newlabel{sec:calibration-explained}{{6}{20}{Calibration: What \texorpdfstring {$\alpha $}{alpha} Really Is}{section.6}{}}
+\@writefile{toc}{\contentsline {paragraph}{The test.}{20}{section*.42}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Recalibration.}{20}{section*.43}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{Glossary}{21}{section*.44}\protected@file@percent }
+\gdef \@abspage@last{22}
