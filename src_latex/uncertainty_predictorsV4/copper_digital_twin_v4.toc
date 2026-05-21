@@ -1,0 +1,58 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Project Overview and Scope}{2}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Goal}{2}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Scope of this document}{2}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Why surrogates must be chained}{2}{subsection.1.3}%
+\contentsline {subsection}{\numberline {1.4}Data}{2}{subsection.1.4}%
+\contentsline {subsection}{\numberline {1.5}Current MVP status}{3}{subsection.1.5}%
+\contentsline {subsection}{\numberline {1.6}Companion documents}{3}{subsection.1.6}%
+\contentsline {subsection}{\numberline {1.7}Two new directions for the project}{3}{subsection.1.7}%
+\contentsline {paragraph}{Direction~1: Migrate AutoML backend from H2O to AutoGluon.}{3}{section*.2}%
+\contentsline {paragraph}{Direction~2: From point predictions to predictive distributions.}{3}{section*.3}%
+\contentsline {section}{\numberline {2}Project Decisions and Caveats}{4}{section.2}%
+\contentsline {subsection}{\numberline {2.1}From deterministic MAE/MAPE to predictive distributions}{4}{subsection.2.1}%
+\contentsline {paragraph}{Why the analogy is partially correct.}{4}{section*.4}%
+\contentsline {paragraph}{Why the analogy is incomplete.}{4}{section*.5}%
+\contentsline {paragraph}{Consistency check.}{4}{section*.6}%
+\contentsline {subsection}{\numberline {2.2}Rules of thumb on rows-per-feature}{5}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Cold drawing rows are not i.i.d.}{5}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}H2O $\rightarrow $ AutoGluon migration}{5}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Use the weighted ensemble, not a single best learner}{5}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Variance is the natural quantity, not standard deviation}{6}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.7}Physical noise injection}{6}{subsection.2.7}%
+\contentsline {subsection}{\numberline {2.8}Self-training is not adopted; input augmentation is}{6}{subsection.2.8}%
+\contentsline {section}{\numberline {3}Mathematical Formalization of Uncertainty}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Notation}{7}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Bayesian view of the predictive distribution}{7}{subsection.3.2}%
+\contentsline {paragraph}{Why the Bayesian framing?}{7}{section*.7}%
+\contentsline {paragraph}{The predictive distribution.}{8}{section*.8}%
+\contentsline {subsection}{\numberline {3.3}Decomposition: epistemic vs.\ aleatoric}{8}{subsection.3.3}%
+\contentsline {paragraph}{Epistemic uncertainty.}{8}{section*.9}%
+\contentsline {paragraph}{Aleatoric uncertainty.}{8}{section*.10}%
+\contentsline {subsection}{\numberline {3.4}Interpreting $\hat \sigma $: it is not the residual}{8}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Estimating epistemic uncertainty from the AutoGluon ensemble}{9}{subsection.3.5}%
+\contentsline {paragraph}{Uniform estimator (fallback).}{9}{section*.11}%
+\contentsline {paragraph}{Weighted estimator (project default).}{9}{section*.12}%
+\contentsline {paragraph}{Recovering $\bm {w}$ via non-negative least squares.}{9}{section*.13}%
+\contentsline {paragraph}{Mixture interpretation.}{10}{section*.14}%
+\contentsline {paragraph}{Convention.}{10}{section*.15}%
+\contentsline {subsection}{\numberline {3.6}Out-of-fold residuals}{10}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7}Two-model architecture}{11}{subsection.3.7}%
+\contentsline {paragraph}{Model A --- the mean model.}{11}{section*.16}%
+\contentsline {paragraph}{Model B --- the variance model.}{11}{section*.17}%
+\contentsline {paragraph}{Practical detail.}{12}{section*.18}%
+\contentsline {subsection}{\numberline {3.8}Final predictive distribution per surrogate}{12}{subsection.3.8}%
+\contentsline {subsection}{\numberline {3.9}Calibration: nominal coverage, quantiles, empirical coverage}{12}{subsection.3.9}%
+\contentsline {paragraph}{Nominal coverage $\alpha $.}{12}{section*.19}%
+\contentsline {paragraph}{Standard normal quantile $z_\alpha $.}{12}{section*.20}%
+\contentsline {paragraph}{Empirical coverage.}{12}{section*.21}%
+\contentsline {paragraph}{Failure modes and recalibration.}{13}{section*.22}%
+\contentsline {paragraph}{Operational acceptance criterion.}{13}{section*.23}%
+\contentsline {section}{\numberline {4}Error Propagation Across Chained Surrogates}{14}{section.4}%
+\contentsline {subsection}{\numberline {4.1}The chaining setup}{14}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Single-stage Monte Carlo propagation}{14}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Recursive propagation through cold drawing}{15}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Output to the controller}{15}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Input augmentation: (to be decided if used) rigorous use of upstream variance for downstream training}{15}{subsection.4.5}%
+\contentsline {section}{\numberline {5}Project Roadmap: Step by Step}{17}{section.5}%
+\contentsline {section}{Glossary}{18}{section*.35}%

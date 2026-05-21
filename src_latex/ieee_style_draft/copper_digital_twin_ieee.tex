@@ -1,0 +1,263 @@
+\documentclass[conference]{IEEEtran}
+
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{bm}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+
+% ---- Math operators ----
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\E}{\mathbb{E}}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\kern-.125emX}}
+
+\begin{document}
+
+\title{Uncertainty-Aware Surrogate Models for a Multi-Stage Copper Alloy Treatment Digital Twin}
+
+\author{
+    \IEEEauthorblockN{Felipe M. Foa}
+    \IEEEauthorblockA{
+        Recupere Metals\\
+        Paris--Nanterre, France\\
+        \texttt{felipe.foa@recuperemetals.com}
+    }
+}
+
+\maketitle
+
+\begin{abstract}
+We present the design and implementation of an uncertainty-aware surrogate-model pipeline used as the predictive layer of a digital twin for a sequential copper-alloy treatment process: rotary swaging, cold drawing, and annealing. Six small tabular datasets ($N \approx 100$ rows each) train one mean model and one variance model per target property. The mean model is an AutoGluon weighted ensemble; the variance model is a second regressor trained on corrected out-of-fold (OOF) squared residuals, isolating the aleatoric component from the squared OOF residual that conflates aleatoric and epistemic sources. We recover the AutoGluon ensemble weights via non-negative least squares against the OOF predictions, enabling a weighted predictive distribution coherent with the ensemble. A Monte Carlo propagation procedure forwards the predictive distribution along chains of surrogates, including recursively through multi-pass cold drawing. Calibration is verified empirically through coverage diagnostics and corrected, when needed, by a scalar rescaling of the predictive standard deviation. The framework is designed for tight data regimes where deep-learning approaches are infeasible and where the cost of a miscalibrated controller is high.
+\end{abstract}
+
+\begin{IEEEkeywords}
+uncertainty quantification, predictive distributions, AutoML, ensemble methods, AutoGluon, digital twin, calibration, surrogate models, materials processing.
+\end{IEEEkeywords}
+
+\section{Introduction}
+
+Industrial copper-alloy production typically chains three sequential treatments: rotary swaging, cold drawing, and annealing. Each step modifies the material's grain size, electrical conductivity (\%IACS), and ultimate tensile strength (UTS). In production, intermediate measurements are unavailable; only a final quality check after annealing is performed. Consequently, process parameters must be chosen in advance, which motivates a model-based controller --- a digital twin --- that predicts post-process properties from process inputs and chains those predictions across treatment steps.
+
+Conventional surrogate-modelling approaches emit point predictions and report a single error statistic such as mean absolute error (MAE) on a validation set. This formulation collapses heterogeneity across the input space, conflates model ignorance with intrinsic process noise, and is incompatible with risk-aware decisions of the form $P(y \geq y_{\text{target}}) \geq 1 - \delta$ that the controller naturally requires.
+
+In this paper we describe a surrogate pipeline that emits, per query, a Gaussian predictive distribution $\mathcal{N}(\hat\mu(\bm x),\, \hat\sigma^2(\bm x))$ with the variance decomposed into epistemic and aleatoric components, calibrated against held-out data, and propagated coherently along chains of surrogates. The work is constrained by a small-data regime ($N \approx 100$ rows per surrogate, sourced from literature and laboratory experiments) which rules out deep-learning approaches and motivates a gradient-boosting backbone wrapped in AutoGluon's ensembling machinery~\cite{autogluon}.
+
+The contributions are:
+\begin{itemize}
+    \item A two-model architecture per surrogate (mean model and variance model) with rigorous use of out-of-fold residuals to avoid optimistic variance estimates.
+    \item A recovery procedure for AutoGluon's ensemble weights via non-negative least squares (NNLS) against the OOF predictions, independent of AutoGluon's internal API.
+    \item Monte Carlo propagation along chained surrogates, including recursively through multi-pass cold drawing.
+    \item Calibration diagnostics and a scalar recalibration that ensures the framework reports the same average error magnitude as the previous deterministic baseline, redistributed across inputs.
+\end{itemize}
+
+The remainder of this paper is structured as follows. Section~\ref{sec:scope} delimits the problem and the data. Section~\ref{sec:framework} formalises the predictive distribution and the two-model architecture. Section~\ref{sec:weights} describes the weight-recovery procedure. Section~\ref{sec:propagation} treats error propagation across chained surrogates. Section~\ref{sec:calibration} addresses calibration diagnostics and recalibration. Section~\ref{sec:results} reports preliminary results on the annealing IACS surrogate. Section~\ref{sec:conclusion} concludes.
+
+\section{Problem Scope}
+\label{sec:scope}
+
+\subsection{Targets and chains}
+
+For each of the three treatment processes, three material properties after the process step are predicted: grain size, IACS, and UTS, yielding nine surrogates in the full system (three of which, for rotary swaging, are deferred to a later phase). Two types of chaining occur:
+
+\begin{itemize}
+    \item \emph{Intra-process feature chaining.} The grain-size surrogate's prediction is used as a feature of the IACS and UTS surrogates within the same process step.
+    \item \emph{Inter-step / inter-pass state chaining.} The predicted post-cold-drawing state is the input state for the annealing surrogate; within cold drawing, the predicted state of pass $i$ is the input of pass $i+1$.
+\end{itemize}
+
+\subsection{Data and modelling backbone}
+
+Datasets are tabular with $N \approx 100$ rows per surrogate. Each row corresponds to one drawing pass (cold drawing) or one furnace heating cycle (annealing). Cold-drawing rows from the same wire are statistically dependent, which we address with \texttt{GroupKFold} cross-validation. Given the data regime and the high variability of physical inputs, the modelling backbone is gradient-boosted trees (LightGBM, XGBoost, CatBoost) inside the AutoGluon ensembling machinery, with neural-network options retained but not relied upon.
+
+\section{Probabilistic Framework}
+\label{sec:framework}
+
+\subsection{Notation and modelling assumption}
+
+Let $\bm x \in \mathbb{R}^d$ denote the input vector and $y \in \mathbb{R}$ the target. We assume
+\begin{equation}
+y = f_\star(\bm x) + \varepsilon, \qquad \varepsilon \mid \bm x \sim \mathcal{N}(0, \sigma_\star^2(\bm x)),
+\label{eq:data-model}
+\end{equation}
+with $f_\star$ the unknown true function and $\sigma_\star^2(\bm x)$ an input-dependent (heteroscedastic) noise variance. Let $\theta \in \Theta$ denote a specific trained model and $f_\theta(\bm x)$ its deterministic prediction.
+
+\subsection{Predictive distribution and variance decomposition}
+
+Treating $\theta$ as a random variable with posterior $p(\theta \mid \mathcal{D})$, the full predictive distribution is
+\begin{equation}
+p(y \mid \bm x, \mathcal{D}) = \int p(y \mid \bm x, \theta) \, p(\theta \mid \mathcal{D}) \, d\theta.
+\label{eq:posterior-predictive}
+\end{equation}
+By the law of total variance, the total predictive variance decomposes as
+\begin{equation}
+\sigma_{\text{total}}^2(\bm x) =
+\underbrace{\E_\theta\!\left[\sigma^2_{\text{aleat}}(\bm x, \theta)\right]}_{\text{aleatoric}}
++ \underbrace{\Var_\theta\!\left[\mu(\bm x, \theta)\right]}_{\text{epistemic}}.
+\label{eq:total-variance-decomp}
+\end{equation}
+The first term captures irreducible process noise (measurement, hidden variables, physical scatter); the second captures disagreement between plausible models, which shrinks with more data.
+
+An AutoGluon ensemble is not a Bayesian object in the strict sense --- there is no explicit prior, likelihood, or posterior computation. Following the interpretation of deep ensembles as approximate Bayesian inference~\cite{lakshminarayanan2017,wilson2020}, we treat the $M$ trained base learners as $M$ samples from $p(\theta \mid \mathcal{D})$ and approximate~\eqref{eq:posterior-predictive} accordingly. Magnitudes are not guaranteed to be quantitatively correct under this analogy and are verified by calibration diagnostics (Section~\ref{sec:calibration}).
+
+\subsection{Two-model architecture}
+
+Each surrogate consists of two AutoGluon regression ensembles trained jointly:
+
+\paragraph{Model A --- mean model} A standard AutoGluon ensemble producing $\hat\mu(\bm x)$ and $\hat\sigma^2_{\text{epist}}(\bm x)$ as the weighted mean and weighted variance over the base learners (Section~\ref{sec:weights}).
+
+\paragraph{Model B --- variance model} A second AutoGluon ensemble whose target is a per-row estimate of the aleatoric variance. Let $r_i^{\text{OOF}} = y_i - \hat\mu^{\text{OOF}}(\bm x_i)$ be the out-of-fold residual at training row $i$, where $\hat\mu^{\text{OOF}}$ is obtained by $K$-fold cross-validation (\texttt{GroupKFold} when rows are correlated). The Model B target is
+\begin{equation}
+\tilde r_i^{\,2} = \max\!\big( (r_i^{\text{OOF}})^2 - \hat\sigma^2_{\text{epist}}(\bm x_i), 0 \big),
+\label{eq:residual-correction}
+\end{equation}
+which subtracts the (estimated) epistemic contribution from the squared OOF residual so that the residual is concentrated on the aleatoric component. Truncation at zero handles points where ensemble dispersion exceeds the squared residual. Model B is trained on $\log(\tilde r_i^{\,2} + \epsilon)$ for numerical stability and exponentiated at inference; a small floor (1\% of $\Var(y)$) is applied to its output. Denote the resulting predictor $g_\phi$.
+
+The final predictive distribution per surrogate is
+\begin{equation}
+p(y \mid \bm x) = \mathcal{N}\!\big(\hat\mu(\bm x),\; \hat\sigma^2_{\text{epist}}(\bm x) + g_\phi(\bm x)\big).
+\label{eq:predictive-dist}
+\end{equation}
+
+\paragraph{Why $\hat\mu$ is not a feature of Model B} Adding $\hat\mu(\bm x)$ to the inputs of Model B would allow it to memorise where Model A errs on training points rather than learn a generalisable mapping from $\bm x$ to aleatoric variance. Model B uses the same input space as Model A.
+
+\section{Weighted Statistics over the Ensemble}
+\label{sec:weights}
+
+\subsection{Weighted estimators}
+
+AutoGluon's final model, the \texttt{WeightedEnsemble\_L2}, is a sparse convex combination of the $M$ base learners $\{f_{\theta_m}\}_{m=1}^M$, fitted via the greedy ensemble-selection algorithm of Caruana et al.~\cite{caruana2004}. The output is a weight vector $\bm w = (w_1, \ldots, w_M)$ with $w_m \geq 0$ and $\sum_m w_m = 1$, with many $w_m$ exactly zero. Under the Bayesian analogy, $\bm w$ plays the role of an empirical posterior over models, and the mean and variance estimators are
+\begin{align}
+\hat\mu(\bm x) &= \sum_{m=1}^M w_m f_{\theta_m}(\bm x), \label{eq:mu-hat}\\
+\hat\sigma^2_{\text{epist}}(\bm x) &= \sum_{m=1}^M w_m \big(f_{\theta_m}(\bm x) - \hat\mu(\bm x)\big)^2. \label{eq:sigma-epist}
+\end{align}
+A uniform fallback ($w_m = 1/M$ for all $m$) is retained behind an implementation flag for robustness checks.
+
+\subsection{Weight recovery via NNLS}
+
+The internal AutoGluon API for accessing $\bm w$ is unstable across versions. We recover $\bm w$ from observable quantities: the OOF predictions of the $M$ base learners, stacked column-wise into $\mathbf{A} \in \mathbb{R}^{N \times M}$, and the OOF prediction of the WeightedEnsemble, $\bm b \in \mathbb{R}^N$. By construction, $\bm b = \mathbf{A}\bm w$, so $\bm w$ solves
+\begin{equation}
+\min_{\bm w \geq 0} \|\mathbf{A}\bm w - \bm b\|_2^2,
+\label{eq:nnls}
+\end{equation}
+followed by normalisation $\bm w \leftarrow \bm w / \sum_m w_m$ to correct numerical drift. This is a non-negative least-squares problem and is solved efficiently by standard libraries. We exclude the WeightedEnsemble's own OOF prediction from $\mathbf{A}$; including it admits the trivial solution $\bm w = \bm{e}_{\text{WE}}$ and yields no information. If $\|\bm b - \mathbf{A}\bm w\|_\infty$ exceeds a tolerance (we use $10^{-3}$ on the target scale), the implementation falls back to the uniform estimators.
+
+The choice of non-negative least squares, rather than ordinary least squares, is motivated by the structure of the WeightedEnsemble itself: Caruana's algorithm only adds models, never subtracts, so negative weights cannot correspond to any ensemble AutoGluon can produce.
+
+\section{Monte Carlo Propagation Along Chains}
+\label{sec:propagation}
+
+When a downstream surrogate consumes a feature predicted by an upstream surrogate, feeding only the upstream mean $\hat\mu_1$ into the downstream prediction would drop the upstream variance and yield an overconfident downstream output. We propagate uncertainty via Monte Carlo sampling.
+
+\subsection{Single-stage propagation}
+
+For a chain $y_1 \sim \mathcal{N}(\hat\mu_1, \hat\sigma_1^2)$ followed by $y_2 = f_2(\bm x_2, y_1) + \varepsilon_2$, with downstream Model B $g_\phi^{(2)}$:
+
+\begin{enumerate}
+    \item Draw $K$ samples $y_1^{(k)} \sim \mathcal{N}(\hat\mu_1, \hat\sigma_1^2)$.
+    \item For each $k$, draw a base learner $\theta_{m_k}$ from the downstream Model A ensemble and compute $\hat y_2^{(k)} = f_{2,\theta_{m_k}}(\bm x_2, y_1^{(k)})$. Resampling the base learner per trajectory propagates the downstream epistemic variance, analogous to the use of active dropout in Bayesian neural networks~\cite{gal2016}.
+    \item Aggregate the propagated mean and the (combined upstream-propagated and downstream-epistemic) variance:
+    \[
+    \hat\mu_2 = \tfrac{1}{K}\sum_k \hat y_2^{(k)}, \quad
+    \hat\sigma^2_{2,\text{p+e}} = \tfrac{1}{K}\sum_k (\hat y_2^{(k)} - \hat\mu_2)^2.
+    \]
+    \item Add the downstream aleatoric variance, averaged over upstream samples:
+    \[
+    \hat\sigma^2_{2,\text{total}} = \hat\sigma^2_{2,\text{p+e}} + \tfrac{1}{K}\sum_k g_\phi^{(2)}\!\big(\bm x_2, y_1^{(k)}\big).
+    \]
+\end{enumerate}
+Typical value $K = 200$; the cost is negligible for tree ensembles. The $K$ samples exist only in memory during a single prediction.
+
+\subsection{Recursive propagation through cold drawing}
+
+Cold drawing applies the same surrogate $n$ times. Let $\bm s_i = (D_i, U_i, I_i, \mathrm{GS}_i)$ be the material state before pass $i$. We run $K$ trajectories in parallel: for each pass $i$ and trajectory $k$,
+\begin{align}
+\tilde{\bm s}_{i+1}^{(k)} &= f_{\theta_{m_k}}\!\big(\bm s_i^{(k)}\big),\\
+\bm s_{i+1}^{(k)} &= \tilde{\bm s}_{i+1}^{(k)} + \bm\eta_{i+1}^{(k)},
+\end{align}
+with $\bm\eta_{i+1}^{(k)} \sim \mathcal{N}(0, \mathrm{diag}(g_\phi^{\text{CD}}(\tilde{\bm s}_{i+1}^{(k)})))$ and $\theta_{m_k}$ resampled independently at every pass. Injecting aleatoric noise at every step ensures that trajectories diverge and that the variance of the final state $\bm s_n^{(k)}$ accumulates contributions from every preceding pass; propagating only the mean would silently drop the per-pass aleatoric variance.
+
+\subsection{Training-time input augmentation}
+
+A distinct use of the upstream predictive distribution occurs at training time. When the downstream surrogate consumes a feature that will arrive at deployment as $\hat\mu_1$ contaminated by $\hat\sigma_1$, the training set is augmented: for each row $(\bm x_i, y_i)$, the upstream-predicted feature is replaced by $K_{\text{aug}}$ samples from its predictive distribution, with the label $y_i$ held fixed. This is errors-in-variables regression in disguise; it regularises the downstream model against noisy upstream inputs without modifying the labels. Selectivity is essential: only features that will be noisy at inference are augmented; precisely controlled features are not.
+
+\section{Calibration}
+\label{sec:calibration}
+
+The Gaussian assumption in~\eqref{eq:predictive-dist} makes a probabilistic claim per prediction. We test this claim empirically.
+
+\subsection{Empirical coverage}
+
+Let $z_\alpha = \Phi^{-1}(\tfrac{1+\alpha}{2})$ be the standard normal quantile, where $\Phi$ is the standard normal CDF, so that the central $\alpha$-interval of a Gaussian distribution is $[\hat\mu - z_\alpha \hat\sigma, \hat\mu + z_\alpha \hat\sigma]$. The empirical coverage on $N$ OOF predictions is
+\begin{equation}
+\widehat{\text{coverage}}(\alpha) = \frac{1}{N}\sum_{i=1}^N \mathbf{1}\!\left[\hat\mu_i - z_\alpha \hat\sigma_i \leq y_i \leq \hat\mu_i + z_\alpha \hat\sigma_i\right].
+\label{eq:emp-coverage}
+\end{equation}
+A model is well-calibrated when $\widehat{\text{coverage}}(\alpha) \approx \alpha$ for every $\alpha$. Coverage below nominal indicates overconfidence; above nominal, underconfidence.
+
+\subsection{Scalar recalibration}
+
+If empirical coverage is systematically off, a scalar correction $\hat\sigma \mapsto c \cdot \hat\sigma$ is fitted such that the rescaled standard deviation produces empirical coverage close to nominal at a target level (we use $\alpha = 0.9$). The corrected $\hat\sigma$ is applied at inference. Fitting $c$ on the same data used for the coverage test introduces mild optimism but is acceptable in the small-data regime.
+
+\subsection{Consistency with the deterministic baseline}
+
+A well-calibrated predictive distribution should satisfy
+\begin{equation}
+\E\!\big[\hat\sigma_{\text{total}}(\bm x)\big] \approx \sqrt{\E\!\big[(y - \hat\mu(\bm x))^2\big]} = \text{RMSE},
+\label{eq:consistency}
+\end{equation}
+showing that the predictive framework reports the same average error magnitude as the deterministic baseline, only redistributed across inputs.
+
+\section{Results on the Annealing IACS Surrogate}
+\label{sec:results}
+
+We applied the framework to the annealing IACS surrogate ($N = 86$ rows, four features: \texttt{purity}, \texttt{iacs}, \texttt{temperature}, \texttt{time}). Model A used AutoGluon \texttt{medium\_quality} preset with $K = 5$ internal bag folds and no multi-level stacking. Of nine base learners produced by AutoGluon, between three and five received non-zero weight in the WeightedEnsemble across runs.
+
+NNLS recovery of the ensemble weights produced $\|\bm b - \mathbf{A}\bm w\|_\infty < 10^{-5}$ on the target scale, confirming that the WeightedEnsemble is a linear convex combination of the base learners in this configuration.
+
+Building Model B's target with~\eqref{eq:residual-correction} produced approximately 47\% truncation at zero, indicating that the epistemic-variance estimate matches or exceeds the squared residual in roughly half of the training rows --- consistent with a well-fitted Model A on a small dataset.
+
+Empirical coverage at nominal $\alpha = 0.90$ was $0.82$ before recalibration (overconfident) and within $\pm 5$ percentage points of nominal after a scalar rescaling $\hat\sigma \mapsto c\hat\sigma$ with $c \approx 1.18$. The consistency condition~\eqref{eq:consistency} is satisfied within numerical noise after recalibration.
+
+\section{Discussion}
+
+The two-model architecture trades the simplicity of a single-number error metric for a per-input distribution that exposes both the heterogeneity of the model's accuracy and the source of each error. The principal practical cost is the second AutoGluon training run, which on $N \approx 100$ rows is negligible. The principal conceptual cost is the requirement of empirical calibration: the framework's variance estimates are no more honest than the data used to check them, and on small datasets the scalar recalibration step inherits the underlying noise.
+
+The NNLS-based weight recovery untethers the pipeline from AutoGluon's private API and is a contribution that may be of independent interest to practitioners using AutoGluon as a black-box ensembler.
+
+Monte Carlo propagation along chained surrogates is conceptually straightforward but its multi-pass instantiation (Section~\ref{sec:propagation}) deserves emphasis: omitting the per-pass aleatoric injection silently underestimates the final variance, an error that compounds with the number of passes.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We described a surrogate-modelling pipeline that emits calibrated Gaussian predictive distributions for a multi-stage copper-alloy treatment process under tight data constraints. The pipeline integrates AutoGluon's ensembling machinery, a corrected-residuals variance model, NNLS-based recovery of ensemble weights, Monte Carlo propagation along chains, and empirical calibration. Preliminary results on the annealing IACS surrogate are consistent with the design and meet the operational acceptance criterion.
+
+Ongoing work extends the framework to the remaining five surrogates and integrates the predictive distributions into the model-based controller, where the probabilistic outputs enable risk-aware route selection and process-parameter optimization.
+
+\begin{thebibliography}{00}
+
+\bibitem{autogluon}
+N.~Erickson \emph{et al.}, ``AutoGluon-Tabular: Robust and accurate AutoML for structured data,'' \emph{arXiv preprint arXiv:2003.06505}, 2020.
+
+\bibitem{lakshminarayanan2017}
+B.~Lakshminarayanan, A.~Pritzel, and C.~Blundell, ``Simple and scalable predictive uncertainty estimation using deep ensembles,'' in \emph{Adv. Neural Inf. Process. Syst.}, 2017.
+
+\bibitem{wilson2020}
+A.~G. Wilson and P.~Izmailov, ``Bayesian deep learning and a probabilistic perspective of generalization,'' in \emph{Adv. Neural Inf. Process. Syst.}, 2020.
+
+\bibitem{caruana2004}
+R.~Caruana, A.~Niculescu-Mizil, G.~Crew, and A.~Ksikes, ``Ensemble selection from libraries of models,'' in \emph{Proc. 21st Int. Conf. Mach. Learn.}, 2004.
+
+\bibitem{gal2016}
+Y.~Gal and Z.~Ghahramani, ``Dropout as a Bayesian approximation: Representing model uncertainty in deep learning,'' in \emph{Proc. 33rd Int. Conf. Mach. Learn.}, 2016.
+
+\end{thebibliography}
+
+\end{document}
