@@ -25,18 +25,18 @@
 \title{Uncertainty-Aware Surrogate Models for a Multi-Stage Copper Alloy Treatment Digital Twin}
 
 \author{
-    \IEEEauthorblockN{Felipe M. Foa}
+    \IEEEauthorblockN{Felipe M. F. de Oliveira}
     \IEEEauthorblockA{
         Recupere Metals\\
         Paris--Nanterre, France\\
-        \texttt{felipe.foa@recuperemetals.com}
+        \texttt{felipe@recuperemetals.com}
     }
 }
 
 \maketitle
 
 \begin{abstract}
-We present the design and implementation of an uncertainty-aware surrogate-model pipeline used as the predictive layer of a digital twin for a sequential copper-alloy treatment process: rotary swaging, cold drawing, and annealing. Six small tabular datasets ($N \approx 100$ rows each) train one mean model and one variance model per target property. The mean model is an AutoGluon weighted ensemble; the variance model is a second regressor trained on corrected out-of-fold (OOF) squared residuals, isolating the aleatoric component from the squared OOF residual that conflates aleatoric and epistemic sources. We recover the AutoGluon ensemble weights via non-negative least squares against the OOF predictions, enabling a weighted predictive distribution coherent with the ensemble. A Monte Carlo propagation procedure forwards the predictive distribution along chains of surrogates, including recursively through multi-pass cold drawing. Calibration is verified empirically through coverage diagnostics and corrected, when needed, by a scalar rescaling of the predictive standard deviation. The framework is designed for tight data regimes where deep-learning approaches are infeasible and where the cost of a miscalibrated controller is high.
+We present the design and implementation of an uncertainty-aware surrogate-model pipeline used as the predictive layer of a digital twin for a sequential copper-alloy treatment process: rotary swaging, cold drawing, and annealing. Six small tabular datasets ($N \approx 100$ rows each) train one mean model and one variance model per target property. The mean model is an AutoGluon weighted ensemble; the variance model is a second regressor trained on corrected out-of-fold (OOF) squared residuals, isolating the aleatoric component from the squared OOF residual that conflates aleatoric and epistemic sources. We recover the AutoGluon ensemble weights via non-negative least squares against the OOF predictions, enabling a weighted predictive distribution coherent with the ensemble. A Monte Carlo propagation procedure forwards the predictive distribution along chains of surrogates, including recursively through multi-pass cold drawing. Statistical coverage calibration is verified empirically through coverage diagnostics and corrected, when needed, by a scalar rescaling of the predictive standard deviation. The framework is designed for tight data regimes where deep-learning approaches are so far infeasible and where the cost of a miscalibrated controller is high.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -45,18 +45,18 @@ uncertainty quantification, predictive distributions, AutoML, ensemble methods, 
 
 \section{Introduction}
 
-Industrial copper-alloy production typically chains three sequential treatments: rotary swaging, cold drawing, and annealing. Each step modifies the material's grain size, electrical conductivity (\%IACS), and ultimate tensile strength (UTS). In production, intermediate measurements are unavailable; only a final quality check after annealing is performed. Consequently, process parameters must be chosen in advance, which motivates a model-based controller --- a digital twin --- that predicts post-process properties from process inputs and chains those predictions across treatment steps.
+Industrial copper-alloy production typically may chain sequential treatments, for instance: rotary swaging, cold drawing, and annealing. Each step modifies the material's grain size, electrical conductivity (\%IACS), and ultimate tensile strength (UTS). In industrial production, intermediate measurements are unavailable, either for destructive measurrements or for unavailability. Consequently, process parameters must be chosen in advance based on surrogate models prediction, which motivates a model-based controller --- a digital twin --- that predicts post-process properties from process inputs and chains those predictions across treatment steps with statistical coverage range in order to assure a certain percentage of key parameters predictions.
 
-Conventional surrogate-modelling approaches emit point predictions and report a single error statistic such as mean absolute error (MAE) on a validation set. This formulation collapses heterogeneity across the input space, conflates model ignorance with intrinsic process noise, and is incompatible with risk-aware decisions of the form $P(y \geq y_{\text{target}}) \geq 1 - \delta$ that the controller naturally requires.
+Conventional surrogate-modelling approaches emit point predictions and report a single error statistic such as mean absolute error (MAE), root mean squared error (RMSE) or mean average percentual error (MAPE) on a validation set. This formulation normally does not capture the heterogeneity across the input space due to the model ignorance with intrinsic process noise, and is incompatible with risk-aware decisions of the statistical form $P(y \geq y_{\text{target}}) \geq 1 - \delta$ that the controller could require.
 
-In this paper we describe a surrogate pipeline that emits, per query, a Gaussian predictive distribution $\mathcal{N}(\hat\mu(\bm x),\, \hat\sigma^2(\bm x))$ with the variance decomposed into epistemic and aleatoric components, calibrated against held-out data, and propagated coherently along chains of surrogates. The work is constrained by a small-data regime ($N \approx 100$ rows per surrogate, sourced from literature and laboratory experiments) which rules out deep-learning approaches and motivates a gradient-boosting backbone wrapped in AutoGluon's ensembling machinery~\cite{autogluon}.
+In this paper we describe a surrogate pipeline that emits, per query, a Gaussian predictive distribution $\mathcal{N}(\hat\mu(\bm x),\, \hat\sigma^2(\bm x))$ with the variance decomposed into epistemic and aleatoric components, calibrated against held-out data, and propagated coherently along chains of surrogates per process. The work is constrained by a small-data regime ($N \approx 100$ rows per surrogate, sourced from literature and/or laboratory experiments) which rules out deep-learning approaches and motivates a gradient-boosting backbone wrapped in AutoGluon's ensembling machinery~\cite{autogluon}.
 
 The contributions are:
 \begin{itemize}
-    \item A two-model architecture per surrogate (mean model and variance model) with rigorous use of out-of-fold residuals to avoid optimistic variance estimates.
+    \item A two-model architecture per surrogate (mean model and variance model) with rigorous use of out-of-fold residuals to avoid optimistic variance estimates. One for annealing, the other for cold drawing.
     \item A recovery procedure for AutoGluon's ensemble weights via non-negative least squares (NNLS) against the OOF predictions, independent of AutoGluon's internal API.
     \item Monte Carlo propagation along chained surrogates, including recursively through multi-pass cold drawing.
-    \item Calibration diagnostics and a scalar recalibration that ensures the framework reports the same average error magnitude as the previous deterministic baseline, redistributed across inputs.
+    \item Calibration diagnostics and a scalar recalibration that ensures the framework average error can be compared to the previous deterministic baseline.
 \end{itemize}
 
 The remainder of this paper is structured as follows. Section~\ref{sec:scope} delimits the problem and the data. Section~\ref{sec:framework} formalises the predictive distribution and the two-model architecture. Section~\ref{sec:weights} describes the weight-recovery procedure. Section~\ref{sec:propagation} treats error propagation across chained surrogates. Section~\ref{sec:calibration} addresses calibration diagnostics and recalibration. Section~\ref{sec:results} reports preliminary results on the annealing IACS surrogate. Section~\ref{sec:conclusion} concludes.
@@ -66,11 +66,11 @@ The remainder of this paper is structured as follows. Section~\ref{sec:scope} de
 
 \subsection{Targets and chains}
 
-For each of the three treatment processes, three material properties after the process step are predicted: grain size, IACS, and UTS, yielding nine surrogates in the full system (three of which, for rotary swaging, are deferred to a later phase). Two types of chaining occur:
+For each of the processes, three material properties after the process step are predicted: grain size, IACS, and UTS. Two types of chaining occur:
 
 \begin{itemize}
-    \item \emph{Intra-process feature chaining.} The grain-size surrogate's prediction is used as a feature of the IACS and UTS surrogates within the same process step.
-    \item \emph{Inter-step / inter-pass state chaining.} The predicted post-cold-drawing state is the input state for the annealing surrogate; within cold drawing, the predicted state of pass $i$ is the input of pass $i+1$.
+    \item \emph{Intra-process feature chaining.} The grain-size surrogate's prediction is used as a feature of the IACS surrogates within the same process step.
+    \item \emph{Inter-step / inter-pass state chaining.} The predicted cold-drawing pass state is the input state for the next prediction; in other words,the predicted state of pass $i$ is the input of pass $i+1$. Enabling 2 types of evaluations: one per row, per single state; and other and per entire group of pass (considering the chaining).
 \end{itemize}
 
 \subsection{Data and modelling backbone}
@@ -87,7 +87,7 @@ Let $\bm x \in \mathbb{R}^d$ denote the input vector and $y \in \mathbb{R}$ the 
 y = f_\star(\bm x) + \varepsilon, \qquad \varepsilon \mid \bm x \sim \mathcal{N}(0, \sigma_\star^2(\bm x)),
 \label{eq:data-model}
 \end{equation}
-with $f_\star$ the unknown true function and $\sigma_\star^2(\bm x)$ an input-dependent (heteroscedastic) noise variance. Let $\theta \in \Theta$ denote a specific trained model and $f_\theta(\bm x)$ its deterministic prediction.
+with $f_\star$ the unknown true function and $\sigma_\star^2(\bm x)$ an input-dependent (heteroscedastic \footnote{We assume input-dependent uncertainty due to the uneven distribution of data across the feature space, which induces higher epistemic uncertainty in sparsely sampled regions. Additionally, some physical regions may also exhibit aleatoric heteroscedasticity.}) noise variance. Let $\theta \in \Theta$ denote a specific trained model and $f_\theta(\bm x)$ its deterministic prediction.
 
 \subsection{Predictive distribution and variance decomposition}
 
