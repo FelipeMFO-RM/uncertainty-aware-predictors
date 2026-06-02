@@ -1,5 +1,5 @@
 # Fdb version 4
-["pdflatex"] 1779359974.79174 "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/ieee_style_draft/copper_digital_twin_ieee.tex" "copper_digital_twin_ieee.pdf" "copper_digital_twin_ieee" 1779359975.47213 0
+["pdflatex"] 1780420165.80613 "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/ieee_style_draft/copper_digital_twin_ieee.tex" "copper_digital_twin_ieee.pdf" "copper_digital_twin_ieee" 1780420166.42777 0
   "C:/Users/fmfoa/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map" 1779355697 82507 a9eef8696c92627b87e9975edea03b2a ""
   "C:/Users/fmfoa/AppData/Local/MiKTeX/miktex/data/le/pdftex/pdflatex.fmt" 1755530951 13257295 e012a5d598c2d0b1ce62a0d1c390c921 ""
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc" 1458473887 4993 80dc9bab7f31fb78a000ccfed0e27cab ""
@@ -131,10 +131,10 @@
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/tools/bm.sty" 1749468414 13236 71253d8fde2c80ecebae7e3f7da0c2b0 ""
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/url/url.sty" 1388490452 12796 8edb7d69a20b857904dd0ea757c14ec9 ""
   "C:/Users/fmfoa/AppData/Local/Programs/MiKTeX/tex/latex/xcolor/xcolor.sty" 1729265222 55384 b454dec21c2d9f45ec0b793f0995b992 ""
-  "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/ieee_style_draft/copper_digital_twin_ieee.tex" 1779359974 22528 b56d42f208cc9068d2cde8aa0de40d66 ""
-  "copper_digital_twin_ieee.aux" 1779359975 5255 09942d55f47fad1e9f9cc9344db2b8d1 "pdflatex"
-  "copper_digital_twin_ieee.out" 1779359975 4186 52c8441aa39c274833612ba58c1f95a3 "pdflatex"
-  "copper_digital_twin_ieee.tex" 1779359974 22528 b56d42f208cc9068d2cde8aa0de40d66 ""
+  "c:/Users/fmfoa/Projects/uncertainty-aware-predictors/src_latex/ieee_style_draft/copper_digital_twin_ieee.tex" 1780420165 22235 179ffcccc3edc632e8ddf449d1b35e6a ""
+  "copper_digital_twin_ieee.aux" 1780420166 5089 7e219185ca3c49025e6954c6e3cca79d "pdflatex"
+  "copper_digital_twin_ieee.out" 1780420166 4186 52c8441aa39c274833612ba58c1f95a3 "pdflatex"
+  "copper_digital_twin_ieee.tex" 1780420165 22235 179ffcccc3edc632e8ddf449d1b35e6a ""
   (generated)
   "copper_digital_twin_ieee.aux"
   "copper_digital_twin_ieee.log"
