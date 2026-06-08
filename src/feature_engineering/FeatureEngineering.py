@@ -613,6 +613,42 @@ class FeatureEngineering:
         )
         return df_labeled
 
+    def concat_with_weight_column(
+        self,
+        df: pd.DataFrame,
+        df_raw_schema: pd.DataFrame,
+        weight_value: float,
+        weight_col: str = "weight_col",
+        target: str = "df_raw_schema",
+        ignore_index: bool = True,
+    ) -> pd.DataFrame:
+        """Concatenate two DataFrames after tagging one with a weight column.
+
+        Args:
+            df (pd.DataFrame): First DataFrame to concatenate.
+            df_raw_schema (pd.DataFrame): Second DataFrame to concatenate.
+            weight_value (float): Constant value assigned in `weight_col`.
+            weight_col (str): Name of the weight column to add.
+            target (str): Which DataFrame receives `weight_col`,
+                either "df" or "df_raw_schema".
+            ignore_index (bool): Passed to `pd.concat` to reindex the result.
+
+        Returns:
+            pd.DataFrame: Concatenation of `df` and `df_raw_schema` with
+            `weight_col` set on the chosen DataFrame.
+        """
+        if target not in ("df", "df_raw_schema"):
+            raise ValueError("target must be 'df' or 'df_raw_schema'.")
+
+        df, df_raw_schema = df.copy(), df_raw_schema.copy()
+
+        if target == "df":
+            df[weight_col] = weight_value
+        else:
+            df_raw_schema[weight_col] = weight_value
+
+        return pd.concat([df, df_raw_schema], ignore_index=ignore_index)
+
     def add_ratio_mask_column(self, df, target_variable: str):
         """
         Add a ratio column comparing the final to the initial value

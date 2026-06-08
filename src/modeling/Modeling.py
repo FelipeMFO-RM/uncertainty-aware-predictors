@@ -97,19 +97,19 @@ class Modeling:
         num_stack_levels: int = 0,
         time_limit: int = 120,
         eval_metric: str = "root_mean_squared_error",
+        **kwargs,  # ex: sample_weight="weight_col"
     ):
-        """Train Model A (mean predictor) with internal K-fold bagging.
+        # inclui colunas extras que estejam em kwargs (ex: sample_weight)
+        extra_cols = [v for v in kwargs.values() if isinstance(v, str) and v in df.columns]
+        keep_cols = features + [target] + extra_cols
 
-        Bagging is required so that OOF predictions are available later
-        for the epistemic-variance estimate and for the residuals that
-        train Model B.
-        """
+        train_df = df[keep_cols].copy()
 
-        train_df = df[features + [target]].copy()
         predictor = TabularPredictor(
             label=target,
             eval_metric=eval_metric,
             path=path,
+            **kwargs,  # <-- vai pro construtor
         ).fit(
             train_df,
             presets=presets,
