@@ -348,6 +348,8 @@ class Modeling:
         sigma_total = recalibration_c * np.sqrt(sigma2_total)
         sigma2_total = sigma_total ** 2
 
+        leader_pred = predictor_a.predict(X).values
+
         return pd.DataFrame(
             {
                 "mu": mu,
@@ -355,6 +357,7 @@ class Modeling:
                 "sigma2_aleat": sigma2_aleat,
                 "sigma2_total": sigma2_total,
                 "sigma_total": sigma_total,
+                "leader_model_prediction": leader_pred,
             }
         )
 
