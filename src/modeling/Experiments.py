@@ -353,6 +353,9 @@ class ExperimentRunner:
             alphas=cfg.calibration_alphas,
         )
 
+        # ---- OOD reference (stored for deployment-time sigma inflation) -----
+        ood_ref = self.mdl.fit_ood_reference(data, features=features)
+
         # ---- Persist --------------------------------------------------------
         artifacts = {
             "config": cfg.to_dict(),
@@ -364,6 +367,9 @@ class ExperimentRunner:
             "nnls_max_diff": max_diff,
             "variance_floor": variance_floor,
             "recalibration_c": c_opt,
+            "ood_ref": ood_ref,
+            "y_max": cfg.y_max,
+            "y_min": cfg.y_min,
             "calibration_before": cal_before,
             "calibration_after": cal_after,
             "aleatoric_diagnostics": aleat_diag,
