@@ -668,3 +668,63 @@ class FeatureEngineering:
         )
 
         return df
+
+    def add_stratified_fold_column(
+        self,
+        df: pd.DataFrame,
+        n_folds: int,
+        seed: int,
+        col: str = "fold_id",
+        stratify_col: str | None = "is_essay",
+    ) -> pd.DataFrame:
+        """Assign a deterministic K-fold id, stratified on a label column.
+
+        Used to share the exact same CV partition between AutoGluon
+        (``groups=col``) and H2O (``fold_column=col``), so OOF metrics are
+        coherently comparable. Stratification matters whenever a small
+        subgroup exists (e.g. essay rows among literature rows): plain
+        KFold can by chance concentrate that subgroup into 1-2 folds,
+        leaving others with none, which silently breaks per-fold
+        representativeness. ``df.groupby([col, stratify_col]).size()``
+        is the quick way to confirm every fold got at least one row of
+        the minority class after calling this.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input dataframe. Not mutated; a copy is returned.
+        n_folds : int
+            Number of folds (must be <= the smallest class count in
+            ``stratify_col`` when stratifying).
+        seed : int
+            Random seed for reproducibility.
+        col : str, default "fold_id"
+            Name of the fold-id column to create. Keep it OUT of the
+            model's feature list.
+        stratify_col : str or None, default "is_essay"
+            Column to stratify folds on. Falls back to plain KFold when
+            None or absent from ``df`` (e.g. UTS, which has no essay
+            marker yet).
+
+        Returns
+        -------
+        pd.DataFrame
+            Copy of ``df`` with an added integer ``col`` column.
+        """
+        out = df.copy()
+        out[col] = -1
+
+        if stratify_col is not None and stratify_col in out.columns:
+            from sklearn.model_selection import StratifiedKFold
+            splitter = StratifiedKFold(
+                n_splits=n_folds, shuffle=True, random_state=seed
+            )
+            split_iter = splitter.split(out, out[stratify_col])
+        else:
+            from sklearn.model_selection import KFold
+            splitter = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
+            split_iter = splitter.split(out)
+
+        for k, (_, test_idx) in enumerate(split_iter):
+            out.iloc[test_idx, out.columns.get_loc(col)] = k
+        return out

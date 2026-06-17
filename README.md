@@ -123,7 +123,7 @@ from src.modeling.Modeling import Modeling
 from autogluon.tabular import TabularPredictor
 import pickle, pandas as pd
 
-mdl = Modeling()
+modl = Modeling()
 predictor_a = TabularPredictor.load("models/annealing_iacs/model_a")
 predictor_b = TabularPredictor.load("models/annealing_iacs/model_b")
 art = pickle.load(open("models/annealing_iacs/artifacts.pkl", "rb"))
@@ -135,7 +135,7 @@ new_data = pd.DataFrame({
     "time": [60],
 })
 
-preds = mdl.predict_with_uncertainty(
+preds = modl.predict_with_uncertainty(
     X=new_data,
     predictor_a=predictor_a,
     predictor_b=predictor_b,

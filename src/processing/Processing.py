@@ -46,6 +46,19 @@ class Processing:
 
         return ans
 
+    def load_validation_data_chimie_paris(self, path: str) -> pd.DataFrame:
+        """Load validation data from Chimie ParisTech, drop unnecessary columns,
+        and filter out rows with NaN values."""
+        df_val = (
+            pd.read_csv(path)
+            .drop(columns=["E_GPa", "temperature_C"], errors="ignore")
+            .filter(regex="^(?!.*strength).*")
+            .dropna(axis=0)
+            .rename(columns={"Ref": "id"})
+            .reset_index(drop=True)
+            )
+        return df_val
+
     def reorder_columns(self, df, columns_order):
         """Reorder df columns by columns_order;
         keep unseen columns at the end."""

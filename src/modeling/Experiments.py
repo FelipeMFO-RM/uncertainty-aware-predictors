@@ -126,9 +126,9 @@ class ExperimentRunner:
 
     Parameters
     ----------
-    mdl : Modeling
+    modl : Modeling
         Instance of the existing ``Modeling`` helper class.
-    evl : Evaluation
+    evla : Evaluation
         Instance of the existing ``Evaluation`` helper class.
     models_root : str or Path
         Root of the models directory (e.g. ``../../models``).
@@ -136,9 +136,9 @@ class ExperimentRunner:
 
     LOG_FILENAME = "experiments_log.csv"
 
-    def __init__(self, mdl, evl, models_root: str | Path) -> None:
-        self.mdl = mdl
-        self.evl = evl
+    def __init__(self, modl, evla, models_root: str | Path) -> None:
+        self.modl = modl
+        self.evla = evla
         self.models_root = Path(models_root)
 
     # ------------------------------------------------------------------
@@ -181,13 +181,21 @@ class ExperimentRunner:
         which silently mislabels rows (inclusive slice + wrong length
         after dropna). The caller must provide ``is_essay`` (bool).
         """
-        if essay_col not in df.columns:
-            raise KeyError(
-                f"Column '{essay_col}' missing. Mark schema/essay rows "
-                "explicitly at concat time: df_schema['is_essay']=True; "
-                "df_lit['is_essay']=False."
-            )
         out = df.copy()
+        if essay_col not in df.columns:
+            if cfg.weight_on_essay_rows != 1.0:
+                raise KeyError(
+                    f"Column '{essay_col}' missing but "
+                    f"weight_on_essay_rows={cfg.weight_on_essay_rows}. "
+                    "Mark essay rows explicitly at concat time: "
+                    "df_schema['is_essay']=True; df_lit['is_essay']=False."
+                )
+            logger.info(
+                "No '%s' column: dataset has no essay rows; "
+                "uniform weights applied.", essay_col,
+            )
+            out["weight_col"] = 1.0
+            return out
         out["weight_col"] = np.where(
             out[essay_col].astype(bool), cfg.weight_on_essay_rows, 1.0
         )
@@ -199,21 +207,17 @@ class ExperimentRunner:
         n_folds: int,
         seed: int,
         col: str = "fold_id",
+        stratify_col: str | None = "is_essay",
     ) -> pd.DataFrame:
-        """Assign a deterministic K-fold id, shareable with H2O.
+        """Thin wrapper around FeatureEngineering.add_stratified_fold_column.
 
-        Pass ``groups=col`` to AutoGluon's ``.fit`` and
-        ``fold_column=col`` to H2O's ``.train`` so both engines use the
-        exact same partition. Keep this column OUT of ``features``.
+        Kept here so callers of ExperimentRunner don't need to import
+        FeatureEngineering directly.
         """
-        from sklearn.model_selection import KFold
-
-        out = df.copy()
-        out[col] = -1
-        splitter = KFold(n_splits=n_folds, shuffle=True, random_state=seed)
-        for k, (_, test_idx) in enumerate(splitter.split(out)):
-            out.iloc[test_idx, out.columns.get_loc(col)] = k
-        return out
+        from ..feature_engineering.FeatureEngineering import FeatureEngineering
+        return FeatureEngineering().add_stratified_fold_column(
+            df, n_folds=n_folds, seed=seed, col=col, stratify_col=stratify_col,
+        )
 
     @staticmethod
     def dataset_hash(df: pd.DataFrame) -> str:
@@ -228,6 +232,7 @@ class ExperimentRunner:
         self,
         df: pd.DataFrame,
         cfg: ExperimentConfig,
+        df_val: pd.DataFrame | None = None,
         force: bool = False,
     ) -> dict:
         """Train Models A and B, calibrate, evaluate, persist, and log.
@@ -238,6 +243,13 @@ class ExperimentRunner:
             Full training dataframe. Must contain ``cfg.features``,
             ``cfg.target`` and a boolean ``is_essay`` column.
         cfg : ExperimentConfig
+        df_val : pd.DataFrame or None
+            Optional validation set with ``cfg.features`` and
+            ``cfg.target``. Metrics (val_rmse, val_mae, val_cov_*) are
+            computed with the freshly trained, calibrated predictive
+            distribution and appended to the log. NOTE: if rows of
+            ``df_val`` also belong to ``df`` (e.g. df_schema for
+            illustration), these metrics are IN-SAMPLE and optimistic.
         force : bool
             If False (default) and the run directory already exists with
             artifacts, the run is skipped and prior results returned.
@@ -277,7 +289,7 @@ class ExperimentRunner:
 
         # ---- Model A ---------------------------------------------------
         fit_a_kwargs: dict = {"sample_weight": "weight_col"}
-        predictor_a = self.mdl.fit_model_a(
+        predictor_a = self.modl.fit_model_a(
             df=data,
             target=cfg.target,
             features=features,
@@ -293,8 +305,8 @@ class ExperimentRunner:
 
         # ---- OOF + weights + epistemic ----------------------------------
         mu_oof = predictor_a.predict_oof()
-        oof_matrix, base_names = self.mdl.collect_oof_base_learners(predictor_a)
-        weights, is_ok, max_diff = self.mdl.recover_ensemble_weights(
+        oof_matrix, base_names = self.modl.collect_oof_base_learners(predictor_a)
+        weights, is_ok, max_diff = self.modl.recover_ensemble_weights(
             oof_matrix=oof_matrix, mu_oof_ensemble=mu_oof.values
         )
         if not is_ok:
@@ -302,19 +314,19 @@ class ExperimentRunner:
                 "NNLS recovery off by %.4g; weighted stats may be unreliable "
                 "for this run.", max_diff,
             )
-        _, sigma2_epist_oof = self.mdl.compute_mu_and_epistemic_variance(
+        _, sigma2_epist_oof = self.modl.compute_mu_and_epistemic_variance(
             preds_matrix=oof_matrix,
             weights=weights,
             use_weights=cfg.use_weighted_variance,
         )
 
         # ---- Aleatoric targets + Model B ---------------------------------
-        r_tilde_sq, _, aleat_diag = self.mdl.build_aleatoric_targets(
+        r_tilde_sq, _, aleat_diag = self.modl.build_aleatoric_targets(
             y_true=y_true,
             mu_oof=mu_oof.values,
             sigma2_epist_oof=sigma2_epist_oof,
         )
-        predictor_b = self.mdl.fit_model_b(
+        predictor_b = self.modl.fit_model_b(
             df=data,
             features=features,
             r_tilde_sq=r_tilde_sq,
@@ -327,26 +339,26 @@ class ExperimentRunner:
 
         # ---- Predictive distribution (OOF) + calibration ------------------
         variance_floor = cfg.variance_floor_frac * float(np.var(y_true, ddof=1))
-        sigma2_aleat_oof = self.mdl.predict_aleatoric_variance(
+        sigma2_aleat_oof = self.modl.predict_aleatoric_variance(
             predictor_b, data[features], variance_floor=variance_floor
         )
         sigma_total_oof = np.sqrt(sigma2_epist_oof + sigma2_aleat_oof)
 
-        cal_before = self.mdl.calibration_table(
+        cal_before = self.modl.calibration_table(
             mu=mu_oof.values, sigma=sigma_total_oof, y_true=y_true,
             alphas=cfg.calibration_alphas,
         )
-        c_opt = self.mdl.fit_recalibration_scalar(
+        c_opt = self.modl.fit_recalibration_scalar(
             mu=mu_oof.values, sigma=sigma_total_oof, y_true=y_true,
             target_alpha=cfg.recalibration_target_alpha,
         )
-        cal_after = self.mdl.calibration_table(
+        cal_after = self.modl.calibration_table(
             mu=mu_oof.values, sigma=c_opt * sigma_total_oof, y_true=y_true,
             alphas=cfg.calibration_alphas,
         )
 
         # ---- Metrics ------------------------------------------------------
-        metrics = self.evl.one_step_metrics(
+        metrics = self.evla.one_step_metrics(
             y_true=y_true,
             mu=mu_oof.values,
             sigma=c_opt * sigma_total_oof,
@@ -354,7 +366,39 @@ class ExperimentRunner:
         )
 
         # ---- OOD reference (stored for deployment-time sigma inflation) -----
-        ood_ref = self.mdl.fit_ood_reference(data, features=features)
+        ood_ref = self.modl.fit_ood_reference(data, features=features)
+
+        # ---- Validation set (optional) ---------------------------------------
+        validation_metrics: dict | None = None
+        if df_val is not None:
+            y_max = cfg.y_max if cfg.y_max is not None else np.inf
+            y_min = cfg.y_min if cfg.y_min is not None else -np.inf
+            preds_val = self.modl.predict_with_uncertainty(
+                X=df_val,
+                predictor_a=predictor_a,
+                predictor_b=predictor_b,
+                weights=weights,
+                model_names=base_names,
+                features=features,
+                variance_floor=variance_floor,
+                recalibration_c=c_opt,
+                use_weights=cfg.use_weighted_variance,
+                y_min=y_min,
+                y_max=y_max,
+                ood_ref=ood_ref,
+            )
+            validation_metrics = self.evla.metrics_on_dataframe(
+                df=df_val,
+                target=cfg.target,
+                mu=preds_val["mu"].to_numpy(),
+                sigma=preds_val["sigma_total"].to_numpy(),
+                alphas=cfg.calibration_alphas,
+            )
+            logger.info(
+                "Validation (n=%d): rmse=%.4f mae=%.4f",
+                len(df_val), validation_metrics["rmse"],
+                validation_metrics["mae"],
+            )
 
         # ---- Persist --------------------------------------------------------
         artifacts = {
@@ -374,6 +418,7 @@ class ExperimentRunner:
             "calibration_after": cal_after,
             "aleatoric_diagnostics": aleat_diag,
             "metrics": metrics,
+            "validation_metrics": validation_metrics,
             "dataset_hash": self.dataset_hash(data[features + [cfg.target]]),
         }
         with open(artifacts_path, "wb") as f:
@@ -401,6 +446,16 @@ class ExperimentRunner:
             "mean_sigma_epist": round(float(np.mean(np.sqrt(sigma2_epist_oof))), 5),
             "mean_sigma_aleat": round(float(np.mean(np.sqrt(sigma2_aleat_oof))), 5),
         }
+        if validation_metrics is not None:
+            val = dict(validation_metrics)
+            val_cov = val.pop("coverage", {})
+            log_row["n_val"] = len(df_val)
+            log_row.update(
+                {f"val_{k}": round(v, 5) for k, v in val.items()}
+            )
+            log_row.update(
+                {f"val_cov_{a}": round(c, 4) for a, c in val_cov.items()}
+            )
         log_row["cfg_features"] = "|".join(features)
         self._append_to_log(cfg, log_row)
         logger.info("Done %s in %.1fs", cfg.run_id, log_row["elapsed_s"])
@@ -419,6 +474,7 @@ class ExperimentRunner:
         df: pd.DataFrame,
         base_cfg: ExperimentConfig,
         grid: dict[str, list],
+        df_val: pd.DataFrame | None = None,
         force: bool = False,
     ) -> pd.DataFrame:
         """Cartesian-product sweep over ``grid`` on top of ``base_cfg``.
@@ -452,7 +508,7 @@ class ExperimentRunner:
                 tag=f"{base_cfg.tag}__" + "__".join(tag_bits), **changes
             )
             try:
-                self.run_experiment(df, cfg, force=force)
+                self.run_experiment(df, cfg, df_val=df_val, force=force)
             except Exception:
                 logger.exception("Run %s failed; continuing grid.", cfg.run_id)
 

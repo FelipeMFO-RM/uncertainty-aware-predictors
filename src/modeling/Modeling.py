@@ -121,7 +121,7 @@ class Modeling:
             (ex: ``sample_weight="weight_col"``). String values that
             match column names in ``df`` are kept in the training frame.
         """
-        # inclui colunas extras que estejam em kwargs (ex: sample_weight)
+
         extra_cols = [
             v for v in kwargs.values()
             if isinstance(v, str) and v in df.columns
@@ -139,15 +139,18 @@ class Modeling:
             num_stack_levels=num_stack_levels,
             time_limit=time_limit,
         )
-        if groups is not None:
-            fit_kwargs.pop("num_bag_folds")  # ignored when groups is set
-            kwargs["groups"] = groups
-
-        predictor = TabularPredictor(
+        predictor_kwargs = dict(
             label=target,
             eval_metric=eval_metric,
             path=path,
             **kwargs,  # <-- vai pro construtor
+        )
+        if groups is not None:
+            predictor_kwargs["groups"] = groups
+            fit_kwargs.pop("num_bag_folds")
+
+        predictor = TabularPredictor(
+            **predictor_kwargs
         ).fit(train_df, **fit_kwargs)
         return predictor
 
@@ -429,6 +432,60 @@ class Modeling:
         return out
 
     # =========================================================
+    # Generic, target-agnostic prediction helpers
+    # =========================================================
+    @staticmethod
+    def to_feature_frame(X, features: list) -> pd.DataFrame:
+        """Coerce dict / Series / DataFrame into a DataFrame[features].
+
+        Accepts a dict of scalars ({"temperature": 573, ...}), a dict of
+        lists/arrays, a single pd.Series (one row), or a DataFrame.
+        Raises KeyError listing any missing feature.
+        """
+        if isinstance(X, dict):
+            X = pd.DataFrame(
+                {
+                    k: (
+                        v
+                        if isinstance(v, (list, tuple, np.ndarray, pd.Series))
+                        else [v]
+                    )
+                    for k, v in X.items()
+                }
+            )
+        elif isinstance(X, pd.Series):
+            X = X.to_frame().T
+
+        missing = [f for f in features if f not in X.columns]
+        if missing:
+            raise KeyError(f"Missing features: {missing}")
+        return X[features].copy()
+
+    def predict_target(
+        self,
+        predictor,
+        X,
+        features: list | None = None,
+    ) -> np.ndarray:
+        """Point prediction with ANY AutoGluon predictor, any target.
+
+        Parameters
+        ----------
+        predictor : fitted TabularPredictor (Model A, Model B, IACS,
+            UTS — agnostic: the target is whatever the predictor was
+            trained on).
+        X : dict | pd.Series | pd.DataFrame of input features.
+        features : feature names; if None, inferred from the predictor.
+
+        Returns
+        -------
+        np.ndarray of predictions, shape (N,).
+        """
+        feats = features if features is not None else list(predictor.features())
+        X_frame = self.to_feature_frame(X, feats)
+        return np.asarray(predictor.predict(X_frame))
+
+    # =========================================================
     # Calibration
     # =========================================================
     @staticmethod
@@ -660,7 +717,7 @@ class Modeling:
         outside, sigma grows smoothly — the model still answers, but
         the controller sees a wider interval and Pr(success) drops
         accordingly. ``max_multiplier`` caps runaway inflation far from
-        data (those points should be flagged for human review rather
+        data (those points should be flagged for§ human review rather
         than trusted at any sigma).
         """
         X_arr = X[ood_ref["features"]].to_numpy(dtype=float)
