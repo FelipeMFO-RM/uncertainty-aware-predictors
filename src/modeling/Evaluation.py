@@ -242,3 +242,40 @@ class Evaluation:
         if rmse_one == 0:
             return float("nan")
         return rmse_final / (np.sqrt(n_passes_typical) * rmse_one)
+
+    @staticmethod
+    def metrics_on_dataframe(
+        df: pd.DataFrame,
+        target: str,
+        mu: np.ndarray,
+        sigma: np.ndarray | None = None,
+        alphas: tuple = (0.5, 0.8, 0.9, 0.95),
+    ) -> dict:
+        """one_step_metrics taking the validation DataFrame directly.
+
+        Target-agnostic convenience wrapper: pulls ``y_true`` from
+        ``df[target]`` and forwards to ``one_step_metrics``. Works for
+        IACS, UTS or any other surrogate as long as ``target`` names the
+        ground-truth column in ``df``.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Validation set containing the ground-truth ``target`` column.
+        target : str
+            Name of the ground-truth column in ``df``.
+        mu : (N,) array of point predictions (same order as ``df``).
+        sigma : (N,) array of predictive std devs, or None to skip
+            coverage.
+        alphas : nominal coverage levels.
+
+        Returns
+        -------
+        dict with keys: rmse, mae, mape, r2, and coverage (if sigma).
+        """
+        return Evaluation.one_step_metrics(
+            y_true=df[target].to_numpy(dtype=float),
+            mu=np.asarray(mu, dtype=float),
+            sigma=sigma,
+            alphas=alphas,
+        )

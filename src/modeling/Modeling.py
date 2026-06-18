@@ -333,8 +333,11 @@ class Modeling:
 
         ``variance_floor`` is typically a small fraction of Var(y),
         used to avoid numerically zero variance at deployment time.
+        The output equivalent of the floor in input data.
         """
         log_pred = predictor_b.predict(X).values
+        # To be totally honest we needed a OOF predictor here too, but the
+        # optimistic variable is too small and will be negligible
         sigma2_aleat = np.exp(log_pred) - self.LOG_EPS
         sigma2_aleat = np.maximum(sigma2_aleat, variance_floor)
         return sigma2_aleat
