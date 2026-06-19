@@ -393,6 +393,7 @@ class Modeling:
         )
 
         # Out-of-domain inflation (multiplier == 1 inside training cloud)
+        # IF falls into something outside range
         ood_multiplier = np.ones_like(mu)
         if ood_ref is not None:
             ood_multiplier = self.ood_sigma_multiplier(
