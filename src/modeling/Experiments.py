@@ -161,10 +161,32 @@ class ExperimentRunner:
         return pd.DataFrame()
 
     def _append_to_log(self, cfg: ExperimentConfig, row: dict) -> None:
+        """Append one run to the central log, reconciling column schemas.
+
+        Runs can produce different column sets (e.g. 3- vs 4-feature
+        variants, or runs with/without a validation set adding val_*
+        columns). Plain CSV append would misalign these and corrupt the
+        file, so we read the existing log, concat with pandas (which
+        unions columns and fills missing cells with NaN), and rewrite.
+        """
         path = self.log_path(cfg)
         path.parent.mkdir(parents=True, exist_ok=True)
-        df_row = pd.DataFrame([row])
-        df_row.to_csv(path, mode="a", header=not path.exists(), index=False)
+
+        new_row = pd.DataFrame([row])
+        if path.exists():
+            try:
+                existing = pd.read_csv(path)
+            except Exception:
+                # Corrupted log: back it up instead of crashing the grid.
+                backup = path.with_suffix(".corrupted.csv")
+                path.rename(backup)
+                logger.warning("Log unreadable; moved to %s, starting fresh.", backup)
+                existing = pd.DataFrame()
+            combined = pd.concat([existing, new_row], ignore_index=True)
+        else:
+            combined = new_row
+
+        combined.to_csv(path, index=False)
 
     # ------------------------------------------------------------------
     # Data preparation
