@@ -58,6 +58,10 @@ class ExperimentConfig:
     # ---- identity ----
     process: str = "annealing_iacs"
     tag: str = "baseline"
+    # Grouping tag for the on-disk folder. Defaults to ``tag``; run_grid
+    # sets it to the BASE tag so all variants of a sweep share one parent
+    # directory (and one experiments_log.csv / list_of_the_best.csv).
+    base_tag: str | None = None
 
     # ---- dataset schema ----
     target: str = "iacs_final"
@@ -103,8 +107,14 @@ class ExperimentConfig:
         """Deterministic 8-char hash of every field except ``tag``."""
         d = self.to_dict()
         d.pop("tag")
+        d.pop("base_tag", None)
         payload = json.dumps(d, sort_keys=True, default=str)
         return hashlib.sha1(payload.encode()).hexdigest()[:8]
+
+    @property
+    def effective_base_tag(self) -> str:
+        """Folder-grouping tag: ``base_tag`` if set, else ``tag``."""
+        return self.base_tag if self.base_tag is not None else self.tag
 
     @property
     def run_id(self) -> str:
@@ -135,6 +145,7 @@ class ExperimentRunner:
     """
 
     LOG_FILENAME = "experiments_log.csv"
+    BEST_LIST_FILENAME = "list_of_the_best.csv"
 
     def __init__(self, modl, evla, models_root: str | Path) -> None:
         self.modl = modl
@@ -144,14 +155,22 @@ class ExperimentRunner:
     # ------------------------------------------------------------------
     # Paths and log
     # ------------------------------------------------------------------
-    def experiments_dir(self, cfg: ExperimentConfig) -> Path:
+    def experiments_root(self, cfg: ExperimentConfig) -> Path:
+        """Root holding ALL tags for this process."""
         return self.models_root / cfg.process / "experiments"
+
+    def experiments_dir(self, cfg: ExperimentConfig) -> Path:
+        """Per-tag directory grouping all runs of one sweep."""
+        return self.experiments_root(cfg) / cfg.effective_base_tag
 
     def run_dir(self, cfg: ExperimentConfig) -> Path:
         return self.experiments_dir(cfg) / cfg.run_id
 
     def log_path(self, cfg: ExperimentConfig) -> Path:
         return self.experiments_dir(cfg) / self.LOG_FILENAME
+
+    def best_list_path(self, cfg: ExperimentConfig) -> Path:
+        return self.experiments_dir(cfg) / self.BEST_LIST_FILENAME
 
     def load_log(self, cfg: ExperimentConfig) -> pd.DataFrame:
         """Load the central experiments log (empty DataFrame if absent)."""
@@ -161,13 +180,12 @@ class ExperimentRunner:
         return pd.DataFrame()
 
     def _append_to_log(self, cfg: ExperimentConfig, row: dict) -> None:
-        """Append one run to the central log, reconciling column schemas.
+        """Append one run, reconciling differing column schemas.
 
-        Runs can produce different column sets (e.g. 3- vs 4-feature
-        variants, or runs with/without a validation set adding val_*
-        columns). Plain CSV append would misalign these and corrupt the
-        file, so we read the existing log, concat with pandas (which
-        unions columns and fills missing cells with NaN), and rewrite.
+        Runs can produce different column sets (3- vs 4-feature variants,
+        runs with/without df_val adding val_* columns). Plain CSV append
+        misaligns these and corrupts the file, so we read, concat (pandas
+        unions columns, filling missing cells with NaN) and rewrite.
         """
         path = self.log_path(cfg)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,15 +195,15 @@ class ExperimentRunner:
             try:
                 existing = pd.read_csv(path)
             except Exception:
-                # Corrupted log: back it up instead of crashing the grid.
                 backup = path.with_suffix(".corrupted.csv")
                 path.rename(backup)
-                logger.warning("Log unreadable; moved to %s, starting fresh.", backup)
+                logger.warning(
+                    "Log unreadable; moved to %s, starting fresh.", backup
+                )
                 existing = pd.DataFrame()
             combined = pd.concat([existing, new_row], ignore_index=True)
         else:
             combined = new_row
-
         combined.to_csv(path, index=False)
 
     # ------------------------------------------------------------------
@@ -248,6 +266,77 @@ class ExperimentRunner:
         return hashlib.sha1(payload).hexdigest()[:8]
 
     # ------------------------------------------------------------------
+    # Best-models summary
+    # ------------------------------------------------------------------
+    # (metric, log column, higher_is_better) for the ranking table.
+    BEST_METRICS = (
+        ("rmse", "rmse", False),
+        ("mae", "mae", False),
+        ("mape", "mape", False),
+        ("val_rmse", "val_rmse", False),
+        ("val_mae", "val_mae", False),
+        ("val_mape", "val_mape", False),
+    )
+
+    def build_best_list(
+        self, cfg: ExperimentConfig, top_n: int = 5
+    ) -> pd.DataFrame:
+        """Write ``list_of_the_best.csv`` ranking runs by each metric.
+
+        One column per metric (train rmse/mae/mape + validation
+        rmse/mae/mape), each listing the top-N run_ids best on that
+        metric (rank 1 = best). Two extra columns map every run_id seen
+        to its absolute model directory, so picking a model for prod is
+        a single lookup. Regenerated after every run from the log, so it
+        always reflects the full sweep.
+
+        Returns the written DataFrame (empty if the log has no rows yet).
+        """
+        log = self.load_log(cfg)
+        if log.empty:
+            return pd.DataFrame()
+
+        # rank table: column per metric, rows = rank position (1..top_n)
+        ranking = {}
+        for label, col, higher_is_better in self.BEST_METRICS:
+            if col not in log.columns:
+                continue
+            valid = log[["run_id", col]].dropna(subset=[col])
+            if valid.empty:
+                continue
+            ordered = valid.sort_values(col, ascending=not higher_is_better)
+            top_ids = ordered["run_id"].head(top_n).tolist()
+            top_vals = ordered[col].head(top_n).tolist()
+            # store as "run_id (value)" so the CSV is self-explanatory
+            ranking[f"best_by_{label}"] = [
+                f"{rid} ({val:.4f})" for rid, val in zip(top_ids, top_vals)
+            ]
+
+        # pad columns to equal length (top_n)
+        max_len = max((len(v) for v in ranking.values()), default=0)
+        for k in ranking:
+            ranking[k] += [""] * (max_len - len(ranking[k]))
+        best_df = pd.DataFrame(ranking)
+        best_df.insert(0, "rank", range(1, len(best_df) + 1))
+
+        # run_id -> model_dir lookup appended as two side columns
+        if "model_dir" in log.columns:
+            lookup = (
+                log[["run_id", "model_dir"]]
+                .drop_duplicates(subset="run_id")
+                .reset_index(drop=True)
+            )
+            # align lengths by padding the shorter frame
+            n = max(len(best_df), len(lookup))
+            best_df = best_df.reindex(range(n))
+            lookup = lookup.reindex(range(n))
+            best_df["all_run_ids"] = lookup["run_id"]
+            best_df["model_dir"] = lookup["model_dir"]
+
+        best_df.to_csv(self.best_list_path(cfg), index=False)
+        return best_df
+
+    # ------------------------------------------------------------------
     # Core run
     # ------------------------------------------------------------------
     def run_experiment(
@@ -288,6 +377,7 @@ class ExperimentRunner:
             logger.info("Skipping %s (already run). force=True to redo.", cfg.run_id)
             with open(artifacts_path, "rb") as f:
                 artifacts = pickle.load(f)
+            self.build_best_list(cfg)  # refresh summary even on skip
             return {
                 "cfg": cfg, "run_dir": run_dir, "artifacts": artifacts,
                 "log_row": None, "predictor_a": None, "predictor_b": None,
@@ -459,6 +549,7 @@ class ExperimentRunner:
             "elapsed_s": round(time.time() - t0, 1),
             "n_rows": len(data),
             "dataset_hash": artifacts["dataset_hash"],
+            "model_dir": str(run_dir.resolve()),
             **{f"cfg_{k}": v for k, v in cfg.to_dict().items()},
             **{k: round(v, 5) for k, v in metrics.items()},
             **{f"cov_{a}": round(c, 4) for a, c in coverage.items()},
@@ -480,6 +571,7 @@ class ExperimentRunner:
             )
         log_row["cfg_features"] = "|".join(features)
         self._append_to_log(cfg, log_row)
+        self.build_best_list(cfg)
         logger.info("Done %s in %.1fs", cfg.run_id, log_row["elapsed_s"])
 
         return {
@@ -527,7 +619,9 @@ class ExperimentRunner:
                 for k, v in changes.items()
             ]
             cfg = base_cfg.variant(
-                tag=f"{base_cfg.tag}__" + "__".join(tag_bits), **changes
+                tag=f"{base_cfg.tag}__" + "__".join(tag_bits),
+                base_tag=base_cfg.tag,   # group all variants under base tag
+                **changes,
             )
             try:
                 self.run_experiment(df, cfg, df_val=df_val, force=force)
