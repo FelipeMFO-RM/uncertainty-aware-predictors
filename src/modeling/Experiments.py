@@ -54,7 +54,7 @@ class ExperimentConfig:
     ``features`` and ``calibration_alphas`` are tuples (not lists) so the
     dataclass stays hashable and usable as a dict key / hash source.
     """
-
+#TODO PAREI AQUI VERIFICAR O LIMITE SUPERIOR COMO DEFAULTS
     # ---- identity ----
     process: str = "annealing_iacs"
     tag: str = "baseline"
@@ -88,7 +88,7 @@ class ExperimentConfig:
     calibration_alphas: tuple[float, ...] = (0.5, 0.8, 0.9, 0.95)
 
     # ---- Physical constraints (used at inference; logged for traceability) ----
-    y_max: float | None = 106.0  # physical ceiling for IACS
+    y_max: float | None = None # 106.0 -> physical ceiling for IACS
     y_min: float | None = None
 
     # ---- Reproducibility ----
@@ -192,15 +192,7 @@ class ExperimentRunner:
 
         new_row = pd.DataFrame([row])
         if path.exists():
-            try:
-                existing = pd.read_csv(path)
-            except Exception:
-                backup = path.with_suffix(".corrupted.csv")
-                path.rename(backup)
-                logger.warning(
-                    "Log unreadable; moved to %s, starting fresh.", backup
-                )
-                existing = pd.DataFrame()
+            existing = pd.read_csv(path)
             combined = pd.concat([existing, new_row], ignore_index=True)
         else:
             combined = new_row
@@ -261,7 +253,9 @@ class ExperimentRunner:
 
     @staticmethod
     def dataset_hash(df: pd.DataFrame) -> str:
-        """8-char hash of the dataset content, for traceability."""
+        """8-char hash of the dataset content, for traceability.
+        dataset hash in function of chosen parameters in general.
+        """
         payload = pd.util.hash_pandas_object(df, index=True).values.tobytes()
         return hashlib.sha1(payload).hexdigest()[:8]
 
