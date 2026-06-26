@@ -143,6 +143,12 @@ class ProbabilisticEvaluation:
             "Probabilistic setpoints (delta=%.2f -> Pr>=%.2f): kept %d / %d cells.",
             delta, threshold, len(kept), len(df),
         )
+        if kept.empty:
+                logger.warning(
+                    "No cell met Pr >= %.2f. Max Pr on grid was %.3f. "
+                    "Relax delta, gate on a single target, or revisit setpoints/model.",
+                    threshold, float(df[combined_col].max()) if len(df) else float("nan"),
+                )
         return kept
 
     # ------------------------------------------------------------------
@@ -177,13 +183,11 @@ class ProbabilisticEvaluation:
         temperature_col: str = "temperature",
         time_col: str = "time",
     ) -> pd.DataFrame:
-        """Physics-flavoured cost: thermal budget proxy (T * t).
-
-        A simple, monotone proxy for the diffusion/annealing budget; the
-        deterministic pipeline used an analogous ``cost_phys`` column.
-        Replace with the project's exact physics if a closed form exists.
-        """
+        """Physics-flavoured cost: thermal budget proxy (T * t)."""
         out = df.copy()
+        if out.empty:
+            out["cost_phys"] = pd.Series(dtype=float)
+            return out
         budget = out[temperature_col].to_numpy() * out[time_col].to_numpy()
         rng = np.ptp(budget)
         out["cost_phys"] = (budget - budget.min()) / (rng if rng > 0 else 1.0)
