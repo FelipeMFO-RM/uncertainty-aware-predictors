@@ -33,8 +33,8 @@ import pandas as pd
 
 from src.DataLoader import LoaderHelper
 from src.modeling.Modeling import Modeling
-from src.mbc.MBCInference import MBCInference
-from src.mbc.ProbabilisticEvaluation import ProbabilisticEvaluation
+from src.modeling.MBCInference import MBCInference
+from src.metrics.ProbabilisticEvaluation import ProbabilisticEvaluation
 
 # ---------------------------------------------------------------------------
 # Constants

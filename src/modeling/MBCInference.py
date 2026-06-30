@@ -144,6 +144,71 @@ class MBCInference:
         }
 
     # ------------------------------------------------------------------
+    # Bundle discovery (pick best run from a tag folder automatically)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def resolve_best_bundle(
+        tag_dir: str | Path,
+        metric: str = "rmse",
+        best_list_filename: str = "list_of_the_best.csv",
+    ) -> Path:
+        """Resolve the best run directory inside an ExperimentRunner tag folder.
+
+        A tag folder (e.g. ``.../experiments/annealing-v1-best-quality``)
+        contains one subfolder per run plus ``list_of_the_best.csv``. This
+        reads that file, takes the rank-1 run for ``best_by_<metric>`` and
+        returns its absolute path, so callers never hard-code a run hash.
+
+        Falls back to: (a) the single run subfolder if there is exactly one,
+        or (b) ``tag_dir`` itself if it already looks like a run dir
+        (contains ``artifacts.pkl``).
+        """
+        tag_dir = Path(tag_dir)
+
+        # (b) tag_dir is already a run dir
+        if (tag_dir / "artifacts.pkl").exists():
+            return tag_dir
+
+        best_list = tag_dir / best_list_filename
+        if best_list.exists():
+            bl = pd.read_csv(best_list)
+            col = f"best_by_{metric}"
+            if col in bl.columns and len(bl):
+                # cell format: "<run_id> (<value>)"
+                run_id = str(bl[col].iloc[0]).split(" (")[0].strip()
+                cand = tag_dir / run_id
+                if (cand / "artifacts.pkl").exists():
+                    logger.info("Resolved best bundle by %s: %s", metric, run_id)
+                    return cand
+            # fallback: use the model_dir column if present
+            if "model_dir" in bl.columns and len(bl):
+                cand = Path(str(bl["model_dir"].iloc[0]))
+                if (cand / "artifacts.pkl").exists():
+                    return cand
+
+        # (a) single run subfolder
+        subdirs = [d for d in tag_dir.iterdir()
+                   if d.is_dir() and (d / "artifacts.pkl").exists()]
+        if len(subdirs) == 1:
+            return subdirs[0]
+        if len(subdirs) > 1:
+            raise ValueError(
+                f"{tag_dir} has {len(subdirs)} runs and no usable "
+                f"{best_list_filename}; pass an explicit run dir."
+            )
+        raise FileNotFoundError(f"No artifacts.pkl found under {tag_dir}.")
+
+    def load_surrogates_best(
+        self, tag_dirs: dict[str, str | Path], metric: str = "rmse"
+    ) -> dict[str, "SurrogateBundle"]:
+        """Like load_surrogates, but each value is a TAG dir; best run picked."""
+        resolved = {
+            key: self.resolve_best_bundle(path, metric=metric)
+            for key, path in tag_dirs.items()
+        }
+        return self.load_surrogates(resolved)
+
+    # ------------------------------------------------------------------
     # Grid construction (mirrors Processing.build_paramgrid_dfs_from_id)
     # ------------------------------------------------------------------
     @staticmethod
@@ -270,71 +335,6 @@ class MBCInference:
             new_cols = [c for c in preds.columns if c not in out.columns]
             out = pd.concat([out, preds[new_cols]], axis=1)
         return out
-
-    # ------------------------------------------------------------------
-    # Bundle discovery (pick best run from a tag folder automatically)
-    # ------------------------------------------------------------------
-    @staticmethod
-    def resolve_best_bundle(
-        tag_dir: str | Path,
-        metric: str = "rmse",
-        best_list_filename: str = "list_of_the_best.csv",
-    ) -> Path:
-        """Resolve the best run directory inside an ExperimentRunner tag folder.
-
-        A tag folder (e.g. ``.../experiments/annealing-v1-best-quality``)
-        contains one subfolder per run plus ``list_of_the_best.csv``. This
-        reads that file, takes the rank-1 run for ``best_by_<metric>`` and
-        returns its absolute path, so callers never hard-code a run hash.
-
-        Falls back to: (a) the single run subfolder if there is exactly one,
-        or (b) ``tag_dir`` itself if it already looks like a run dir
-        (contains ``artifacts.pkl``).
-        """
-        tag_dir = Path(tag_dir)
-
-        # (b) tag_dir is already a run dir
-        if (tag_dir / "artifacts.pkl").exists():
-            return tag_dir
-
-        best_list = tag_dir / best_list_filename
-        if best_list.exists():
-            bl = pd.read_csv(best_list)
-            col = f"best_by_{metric}"
-            if col in bl.columns and len(bl):
-                # cell format: "<run_id> (<value>)"
-                run_id = str(bl[col].iloc[0]).split(" (")[0].strip()
-                cand = tag_dir / run_id
-                if (cand / "artifacts.pkl").exists():
-                    logger.info("Resolved best bundle by %s: %s", metric, run_id)
-                    return cand
-            # fallback: use the model_dir column if present
-            if "model_dir" in bl.columns and len(bl):
-                cand = Path(str(bl["model_dir"].iloc[0]))
-                if (cand / "artifacts.pkl").exists():
-                    return cand
-
-        # (a) single run subfolder
-        subdirs = [d for d in tag_dir.iterdir()
-                   if d.is_dir() and (d / "artifacts.pkl").exists()]
-        if len(subdirs) == 1:
-            return subdirs[0]
-        if len(subdirs) > 1:
-            raise ValueError(
-                f"{tag_dir} has {len(subdirs)} runs and no usable "
-                f"{best_list_filename}; pass an explicit run dir."
-            )
-        raise FileNotFoundError(f"No artifacts.pkl found under {tag_dir}.")
-
-    def load_surrogates_best(
-        self, tag_dirs: dict[str, str | Path], metric: str = "rmse"
-    ) -> dict[str, "SurrogateBundle"]:
-        """Like load_surrogates, but each value is a TAG dir; best run picked."""
-        resolved = {
-            key: self.resolve_best_bundle(path, metric=metric)
-            for key, path in tag_dirs.items()
-        }
-        return self.load_surrogates(resolved)
 
     # ------------------------------------------------------------------
     # Monte Carlo propagation: upstream distribution -> downstream feature

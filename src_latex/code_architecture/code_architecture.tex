@@ -1,0 +1,570 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------------------
+% Code Architecture & Module Reference
+% Copper Alloy Digital Twin -- uncertainty-aware surrogate pipeline
+% ---------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage[colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black,citecolor=blue!55!black]{hyperref}
+
+% --- listings for code ---
+\usepackage{listings}
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{codekw}{rgb}{0.10,0.30,0.65}
+\definecolor{codecomment}{rgb}{0.40,0.55,0.40}
+\definecolor{codestr}{rgb}{0.60,0.30,0.20}
+\lstdefinestyle{py}{
+  language=Python,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{codekw}\bfseries,
+  commentstyle=\color{codecomment}\itshape,
+  stringstyle=\color{codestr},
+  numbers=none,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!40},
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+}
+\lstset{style=py}
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\file}[1]{\texttt{\small #1}}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+
+\title{\textbf{Copper Alloy Digital Twin}\\[0.3em]
+\large Code Architecture \& Module Reference}
+\author{Uncertainty-aware surrogate pipeline}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+This document is a developer-facing map of the codebase that implements the
+uncertainty-aware surrogate pipeline and the probabilistic model-based
+controller (MBC) for the copper-alloy digital twin. It explains the directory
+layout, the responsibility of each module, the public API of the core classes,
+and how the pieces compose into the two end-to-end workflows (training a
+surrogate; running the controller). It complements --- and does not replace ---
+the mathematical specification in \file{copper\_digital\_twin\_v4} and the
+inline NumPy-style docstrings. The intended reader is a future maintainer or an
+ML engineer joining the project who needs to understand \emph{where} things
+live and \emph{why}, not to re-derive the math. A short appendix flags
+redundant and deprecated files that are safe to remove.
+\end{abstract}
+
+\tableofcontents
+\vspace{1em}
+
+% ===========================================================================
+\section{Orientation}
+% ===========================================================================
+
+The project turns each of nine industrial surrogates (three material properties
+$\times$ three process steps) into a model that emits a calibrated Gaussian
+predictive distribution rather than a point prediction, and feeds those
+distributions to a controller that selects process parameters by
+\emph{probability of success} rather than binary feasibility.
+
+Two workflows organise the code:
+
+\begin{description}[leftmargin=1.4em,style=nextline]
+  \item[Workflow A --- Train a surrogate.]
+    Fit Model A (mean + epistemic) and Model B (aleatoric) with AutoGluon,
+    recover ensemble weights, build the predictive distribution, calibrate it,
+    and persist a self-contained \emph{bundle}. Driven interactively by the
+    \file{annealing\_*\_fixed} notebooks, or in batch by \code{ExperimentRunner}.
+  \item[Workflow B --- Run the controller.]
+    Load surrogate bundles, sweep a dense \mbox{(temperature, time)} grid,
+    predict every cell's distribution, optionally propagate upstream
+    uncertainty through a chained surrogate, filter cells by a chance
+    constraint, rank by cost, and export the chosen operating points. Driven by
+    the \file{mbc\_annealing\_*} notebooks and the standalone scripts.
+\end{description}
+
+Throughout, a single rule keeps the math in one place: \textbf{all statistical
+logic lives in \code{Modeling}}; every other module orchestrates calls to it.
+
+% ===========================================================================
+\section{Repository layout}
+% ===========================================================================
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+.
+|-- config/
+|   `-- Variables.py            # YAML-backed config accessor (varv.PATHS...)
+|-- data/raw/                   # one CSV per surrogate
+|-- models/                     # persisted AutoGluon bundles + experiment logs
+|-- notebooks/
+|   |-- modeling/               # reference per-surrogate pipelines (Workflow A)
+|   |   |-- annealing_iacs_fixed.ipynb
+|   |   |-- annealing_uts_fixed.ipynb
+|   |   `-- cold_drawing_uts_*.ipynb
+|   |-- experiments/            # grid sweeps + MBC (Workflow A/B)
+|   |   |-- run_experiments_iacs.ipynb
+|   |   |-- run_experiments_uts.ipynb
+|   |   `-- mbc_annealing_uncertainty.ipynb
+|   |-- exploration/            # EDA
+|   `-- deprecated/             # superseded notebooks (see Appendix)
+|-- scripts/
+|   `-- script_mbc_annealing_uncertainty.py   # stakeholder-runnable controller
+`-- src/
+    |-- modeling/
+    |   |-- Modeling.py         # *** core: all UA statistics ***
+    |   |-- Evaluation.py       # regression + calibration metrics, rollouts
+    |   |-- Experiments.py      # config-driven training runner + logging
+    |   `-- MBCInference.py     # bundle loading, grid, MC propagation
+    |-- metrics/
+    |   `-- ProbabilisticEvaluation.py  # chance constraints, cost, selection
+    |-- processing/Processing.py        # dataframe cleaning, validation load
+    |-- feature_engineering/
+    |   |-- FeatureEngineering.py       # labelling, folds, augmentation
+    |   `-- Scaler.py                   # EditMinMaxScaler (deterministic only)
+    |-- visualization/Plots.py          # plotting helpers
+    |-- DataLoader.py                   # LoaderHelper: pickle/model loading
+    `-- DataDumper.py                   # CSV/artefact dumping
+\end{lstlisting}
+
+\noindent
+A surrogate \emph{bundle} is the unit of persistence and the interface between
+the two workflows. It is a directory:
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+<bundle_dir>/
+  artifacts.pkl   # weights, base_model_names, recalibration_c,
+                  # variance_floor, ood_ref, y_min, y_max, calibration tables
+  model_a/        # AutoGluon TabularPredictor (mean + epistemic)
+  model_b/        # AutoGluon TabularPredictor (aleatoric variance, log-space)
+\end{lstlisting}
+
+% ===========================================================================
+\section{Core module: \code{Modeling}}
+% ===========================================================================
+
+\file{src/modeling/Modeling.py} is the heart of the pipeline. Every quantity in
+the predictive distribution is computed here, so that notebooks, the experiment
+runner, and the controller all share one implementation. The methods group into
+five concerns.
+
+\subsection{Model A --- mean and epistemic variance}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.60\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{fit\_model\_a(df, target, features, path, \dots, groups=None, **kwargs)} &
+  Train the AutoGluon mean ensemble. \code{groups} names a shared fold-id column
+  (passed to the \emph{constructor}, not \code{.fit}) so CV folds can be shared
+  with H2O; \code{**kwargs} (e.g.\ \code{sample\_weight}) flow to the
+  constructor, and any column-valued kwarg is kept in the training frame. \\
+\code{collect\_oof\_base\_learners(predictor)} &
+  Stack each base learner's out-of-fold predictions into an $(M,N)$ matrix,
+  \emph{excluding} \code{WeightedEnsemble} (so NNLS does not collapse to the
+  trivial solution). \\
+\code{recover\_ensemble\_weights(oof\_matrix, mu\_oof\_ensemble)} &
+  Solve $\min_{w\ge 0}\lVert A w - b\rVert_2$ via NNLS, normalise to
+  $\sum w = 1$; returns the weights, a recovery-OK flag, and the max
+  reconstruction error. \\
+\code{compute\_mu\_and\_epistemic\_variance(preds\_matrix, weights, use\_weights)} &
+  Weighted (default) or uniform mean and variance over base learners. The
+  uniform branch is the robustness fallback behind \code{use\_weighted\_variance}. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Model B --- aleatoric variance}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.60\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{build\_aleatoric\_targets(y\_true, mu\_oof, sigma2\_epist\_oof)} &
+  Construct $\tilde r^2 = \max\!\big((y-\hat\mu_{\text{oof}})^2 -
+  \hat\sigma^2_{\text{epist}},\,0\big)$ and return truncation diagnostics
+  (fraction of rows clipped to zero). \\
+\code{fit\_model\_b(df, features, r\_tilde\_sq, path, \dots)} &
+  Train the variance ensemble on $\log(\tilde r^2 + \epsilon)$ for numerical
+  stability. \\
+\code{predict\_aleatoric\_variance(predictor\_b, X, variance\_floor)} &
+  Back-transform via $\exp$ and apply a floor (a small fraction of
+  $\mathrm{Var}(y)$) to avoid degenerate zero variance. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Full predictive distribution}
+
+\code{predict\_with\_uncertainty(X, predictor\_a, predictor\_b, weights,
+model\_names, features, \dots)} is the single entry point that assembles a
+prediction. The order of operations is deliberate and matters:
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=0.1em]
+  \item per-base-learner predictions $\rightarrow$ weighted $\hat\mu$,
+        $\hat\sigma^2_{\text{epist}}$;
+  \item \textbf{OOD inflation} (if \code{ood\_ref} given): multiply
+        $\hat\sigma^2_{\text{epist}}$ by $m(x)^2$ for off-domain inputs;
+  \item add $\hat\sigma^2_{\text{aleat}}$ from Model B;
+  \item \textbf{recalibration}: $\sigma \leftarrow c\cdot\sigma$;
+  \item \textbf{physical truncation}: reshape to the support
+        $[y_{\min},y_{\max}]$, appending \code{mu\_trunc},
+        \code{sigma\_trunc}, \code{p\_above\_max}.
+\end{enumerate}
+
+\noindent
+Returns one row per input with \code{mu}, the three variances,
+\code{sigma\_total}, \code{ood\_multiplier}, and (when bounded) the truncated
+moments. The convenience pair \code{to\_feature\_frame} /
+\code{predict\_target} provides a target-agnostic point prediction that accepts
+a dict, Series, or DataFrame and infers features from the predictor.
+
+\subsection{Calibration}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.60\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{empirical\_coverage(mu, sigma, y\_true, alpha)} &
+  Fraction of points inside the central $\alpha$-interval
+  $[\hat\mu - z_\alpha\sigma,\,\hat\mu + z_\alpha\sigma]$,
+  $z_\alpha=\Phi^{-1}(0.5+\alpha/2)$. \\
+\code{calibration\_table(mu, sigma, y\_true, alphas)} &
+  Coverage and gap (empirical $-$ nominal) at several $\alpha$. \\
+\code{fit\_recalibration\_scalar(mu, sigma, y\_true, target\_alpha)} &
+  Find scalar $c$ minimising the squared coverage gap at one $\alpha$ (default
+  $0.9$). Fitted on the same OOF points it audits --- mildly optimistic, by
+  design, in the small-data regime. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Physical constraints and out-of-domain handling}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.60\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{truncated\_gaussian\_moments(mu, sigma, y\_min, y\_max)} &
+  Closed-form mean/std of the Gaussian truncated to the physical support, plus
+  \code{p\_above\_max} (mass the untruncated law placed beyond the ceiling --- a
+  red-flag diagnostic). \\
+\code{pr\_within\_spec\_truncated(mu, sigma, spec\_lo, spec\_hi, \dots)} &
+  $\Pr(\text{spec\_lo}\le Y\le\text{spec\_hi})$ under the truncated law,
+  renormalised by the truncation mass. This is what the controller consumes for
+  feasibility. \\
+\code{sample\_truncated(mu, sigma, n\_samples, \dots)} &
+  Draw $(K,N)$ Monte Carlo samples from the truncated law; the drop-in
+  replacement for \code{rng.normal} in chained propagation, so an impossible
+  value never feeds the next surrogate. \\
+\code{fit\_ood\_reference(X\_train, features)} &
+  Fit a Mahalanobis reference (mean, ridged inverse covariance, $95^{\text{th}}$
+  percentile distance $d_{\text{ref}}$). Stored in the bundle. \\
+\code{ood\_sigma\_multiplier(X, ood\_ref, gamma, max\_multiplier)} &
+  Multiplier $m(x)=\min\!\big(1+\gamma\,\max(0,d(x)-d_{\text{ref}})/d_{\text{ref}},\,
+  m_{\max}\big)$ applied to $\sigma_{\text{epist}}$; exactly $1$ inside the
+  training cloud. \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Legacy methods.} \code{scale\_and\_pred},
+\code{inverse\_target\_if\_any}, and \code{quick\_linear\_regression} are
+retained from the deterministic era for backward compatibility and are not part
+of the uncertainty-aware path.
+
+% ===========================================================================
+\section{Training orchestration: \code{Experiments}}
+% ===========================================================================
+
+\file{src/modeling/Experiments.py} turns a hand-run notebook into a reproducible,
+logged sweep. Two classes.
+
+\subsection{\code{ExperimentConfig} (frozen dataclass)}
+
+The immutable, hashable identity of one run. Every knob --- target, features,
+presets, fold counts, time limits, calibration $\alpha$, physical bounds, fold
+seed --- is a field. Key behaviours:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=0.1em]
+  \item \code{config\_hash()} --- deterministic 8-char SHA-1 over all fields
+        \emph{except} \code{tag} and \code{base\_tag} (cosmetic grouping), so the
+        same configuration never retrains twice.
+  \item \code{run\_id} $=$ \code{tag\_\_<hash>} --- the run's folder name.
+  \item \code{effective\_base\_tag} --- the parent folder grouping all variants
+        of a sweep.
+  \item \code{variant(**changes)} --- a copy with fields replaced (lists
+        coerced to tuples to stay hashable).
+\end{itemize}
+
+\subsection{\code{ExperimentRunner}}
+
+Runs a config end-to-end and maintains the on-disk record. Layout:
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\footnotesize]
+models/<process>/experiments/<base_tag>/
+  experiments_log.csv      # one row per run (schema-reconciled append)
+  list_of_the_best.csv     # top-N runs per metric + run_id -> model_dir map
+  <run_id>/
+    artifacts.pkl  config.yaml  model_a/  model_b/  leaderboard_autogluon.csv
+\end{lstlisting}
+
+\begin{longtable}{@{}p{0.34\textwidth}p{0.60\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{run\_experiment(df, cfg, df\_val=None, force=False)} &
+  Train A and B, recover weights, build aleatoric targets, calibrate, fit the
+  OOD reference, optionally score a validation set, persist the bundle, and
+  append a log row. Skips (and reloads) if the run already exists unless
+  \code{force}. \\
+\code{run\_grid(df, base\_cfg, grid, df\_val=None, force=False)} &
+  Cartesian product over \code{grid}; each variant is stamped with the base tag
+  so they share one folder; failures are logged and the sweep continues. \\
+\code{build\_best\_list(cfg, top\_n=5)} &
+  Regenerate \file{list\_of\_the\_best.csv}: a column per metric (train + val
+  RMSE/MAE/MAPE) listing the best run-ids, plus a \code{run\_id} $\rightarrow$
+  \code{model\_dir} lookup for one-step loading. \\
+\code{build\_weight\_column} / \code{add\_fold\_column} / \code{dataset\_hash} &
+  Data-prep utilities: essay weighting, stratified shared folds (delegated to
+  \code{FeatureEngineering}), and a content hash so two runs are known to share
+  the same data. \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Schema-reconciled logging.} \code{\_append\_to\_log} reads the
+existing CSV, \code{pd.concat}s the new row (unioning columns, filling absent
+ones with \code{NaN}), and rewrites. This prevents the corruption that a raw
+append causes when runs differ in column set (e.g.\ with/without validation, or
+3- vs 4-feature variants).
+
+% ===========================================================================
+\section{The controller: \code{MBCInference} + \code{ProbabilisticEvaluation}}
+% ===========================================================================
+
+Workflow B is split into two modules: one that \emph{predicts} distributions
+over a grid, and one that turns distributions into \emph{decisions}.
+
+\subsection{\code{MBCInference} (\file{src/modeling/})}
+
+\begin{longtable}{@{}p{0.36\textwidth}p{0.58\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{load\_surrogate(bundle\_dir)} / \code{load\_surrogates(dict)} &
+  Load an \code{artifacts.pkl} + both predictors into a \code{SurrogateBundle}. \\
+\code{resolve\_best\_bundle(tag\_dir, metric)} / \code{load\_surrogates\_best} &
+  Given a \emph{tag} folder, read \file{list\_of\_the\_best.csv} and pick the
+  rank-1 run by a metric (default RMSE) --- so callers never hard-code a run
+  hash. \\
+\code{build\_param\_grid(operational\_limits, step)} &
+  Dense inclusive grid over (temperature, time). \\
+\code{build\_state\_grid\_df(material\_properties, param\_grid)} &
+  Broadcast the fixed material state across every grid cell. \\
+\code{predict\_surrogate(bundle, df\_grid, ood\_gamma)} &
+  Run one surrogate's \code{predict\_with\_uncertainty} over the grid, returning
+  prefixed columns (\code{iacs\_mu}, \code{iacs\_sigma}, \dots). \\
+\code{predict\_all(bundles, df\_grid, ood\_gamma)} &
+  Run every surrogate, each using only its own features, merging all
+  distribution columns. \\
+\code{propagate\_upstream\_to\_downstream(upstream, downstream, df\_grid,
+  downstream\_feature, k\_samples=200, \dots)} &
+  Single-stage Monte Carlo propagation (spec \S4.2): draw $K$ upstream samples
+  from the truncated predictive law, run the downstream surrogate on each, and
+  aggregate to a downstream mean and a variance that \emph{includes} the
+  propagated upstream uncertainty (exposed as \code{*\_sigma2\_propagated}). \\
+\bottomrule
+\end{longtable}
+
+\noindent
+\code{SurrogateBundle} is a small dataclass holding \code{target},
+\code{features}, both predictors, the \code{artifacts} dict, and a
+\code{short\_name} property (target stem without \code{\_final}).
+
+\subsection{\code{ProbabilisticEvaluation} (\file{src/metrics/})}
+
+The distribution-aware replacement for the deterministic feasibility and cost
+logic.
+
+\begin{longtable}{@{}p{0.36\textwidth}p{0.58\textwidth}@{}}
+\toprule
+\textbf{Method} & \textbf{Role} \\
+\midrule
+\endhead
+\code{add\_success\_probabilities(df, min\_setpoints, surrogate\_bounds, modl)} &
+  Append $\Pr(Y\ge\text{setpoint})$ per target (under the truncated law when
+  \code{modl} and bounds are given), plus the combined \code{pr\_success\_all}
+  (product over targets). \\
+\code{apply\_probabilistic\_setpoints(df, delta, combined\_col)} &
+  Keep cells meeting the chance constraint $\Pr \ge 1-\delta$. The probabilistic
+  counterpart of the deterministic \code{apply\_min\_setpoints}. \\
+\code{add\_cost\_function} / \code{add\_cost\_function\_physics} &
+  Normalised operational cost (lower $T$, lower $t$) and a thermal-budget proxy
+  ($T\!\cdot\!t$). \\
+\code{add\_risk\_adjusted\_value(df, short\_name, kappa)} &
+  Lower confidence bound $\hat\mu-\kappa\hat\sigma$ for risk-aware ranking
+  (prefers tight-$\sigma$ cells among equal means). \\
+\code{select\_lowest\_by\_features} / \code{select\_highest\_by\_features} &
+  Pick the best row per criterion (lowest cost/time; highest probability). \\
+\code{filter\_by\_temperature\_time\_pairs} &
+  Targeted inspection of explicit operating points. \\
+\bottomrule
+\end{longtable}
+
+\paragraph{$\delta$ versus $\kappa$.} They are deliberately decoupled. $\delta$
+is the \emph{filter}: a cell is admissible iff $\Pr(\text{success})\ge 1-\delta$.
+$\kappa$ is the \emph{ranking knob}: among admissible cells it discounts the
+mean by $\kappa$ standard deviations to prefer robust guarantees. $\delta$ is
+binary (pass/fail); $\kappa$ only reorders. A common, parameter-free alternative
+to a $\kappa$-LCB is to rank directly by \code{pr\_success\_all}, which already
+folds $\mu$ and $\sigma$ together in a calibrated way.
+
+% ===========================================================================
+\section{Supporting modules}
+% ===========================================================================
+
+\begin{description}[leftmargin=1.2em,style=nextline]
+  \item[\code{Evaluation} (\file{src/modeling/}).]
+    Target-agnostic metrics: \code{one\_step\_metrics} (RMSE, MAE, MAPE, $R^2$,
+    optional coverage), \code{metrics\_on\_dataframe} (the same taking a
+    validation DataFrame + target name), and the cold-drawing rollout family
+    (\code{rollout\_single\_group}, \code{rollout\_all\_groups},
+    \code{final\_state\_metrics}, \code{pass\_by\_pass\_curve},
+    \code{compounding\_ratio}) for recursive multi-pass evaluation.
+  \item[\code{Processing} (\file{src/processing/}).]
+    \code{df\_to\_float} (clean/cast with precision-tag stripping),
+    \code{load\_validation\_data\_chimie\_paris} (the held-out validation
+    loader), \code{reorder\_columns}, and \code{filter\_cold\_drawing\_rules}
+    (monotonicity constraints between pre/post properties).
+  \item[\code{FeatureEngineering} (\file{src/feature\_engineering/}).]
+    Element labelling (\code{label\_element}), ratio masks
+    (\code{add\_ratio\_mask\_column}), the shared stratified-fold builder
+    (\code{add\_stratified\_fold\_column}, used by both notebooks and
+    \code{ExperimentRunner}), and the simulation-expansion / outlier utilities
+    used in data preparation.
+  \item[\code{Scaler} (\file{src/feature\_engineering/}).]
+    \code{EditMinMaxScaler} (fixed-bound min--max with optional $\log1p$) and
+    \code{ScalerHelpers}. Used by the \emph{deterministic} path only; AutoGluon
+    preprocesses internally, so the uncertainty-aware pipeline does not scale
+    inputs.
+  \item[\code{Variables} (\file{config/}).]
+    Loads \file{variables.yaml} and exposes it as attributes
+    (\code{varv.PATHS.models}, etc.), self-refreshing on access.
+  \item[\code{DataLoader} / \code{DataDumper} / \code{Plots}.]
+    \code{LoaderHelper} loads pickles and models; \code{DataDumper} writes CSVs
+    and selections; \code{Plots} holds plotting helpers used in notebooks.
+\end{description}
+
+% ===========================================================================
+\section{End-to-end: how a prediction is made}
+% ===========================================================================
+
+The minimal client (from the README) ties the core pieces together:
+
+\begin{lstlisting}
+from src.modeling.Modeling import Modeling
+from autogluon.tabular import TabularPredictor
+import pickle, pandas as pd
+
+modl = Modeling()
+predictor_a = TabularPredictor.load("models/annealing_iacs/<run>/model_a")
+predictor_b = TabularPredictor.load("models/annealing_iacs/<run>/model_b")
+art = pickle.load(open("models/annealing_iacs/<run>/artifacts.pkl", "rb"))
+
+preds = modl.predict_with_uncertainty(
+    X=pd.DataFrame({"purity":[99.95], "iacs":[98.0],
+                    "temperature":[573], "time":[60]}),
+    predictor_a=predictor_a, predictor_b=predictor_b,
+    weights=art["weights"], model_names=art["base_model_names"],
+    features=art["features"], variance_floor=art["variance_floor"],
+    recalibration_c=art["recalibration_c"],
+    use_weights=art["use_weighted_variance"],
+    y_min=art.get("y_min"), y_max=art.get("y_max"),
+    ood_ref=art.get("ood_ref"),
+)
+\end{lstlisting}
+
+\noindent
+The controller (Workflow B) does the same per grid cell via
+\code{MBCInference.predict\_all}, then layers feasibility, cost, and selection
+from \code{ProbabilisticEvaluation}. The standalone
+\file{scripts/script\_mbc\_annealing\_uncertainty.py} packages this for
+stakeholders behind a single YAML config.
+
+% ===========================================================================
+\appendix
+\section{Appendix: redundant \& deprecated files}
+% ===========================================================================
+
+The following were found during a static read of the codebase (imports traced
+across \file{notebooks/}, \file{scripts/}, and \file{src/}). None are imported by
+any active notebook or script; removing them is safe and would reduce confusion
+for new readers. Verify against your latest working tree before deleting.
+
+\begin{longtable}{@{}p{0.40\textwidth}p{0.54\textwidth}@{}}
+\toprule
+\textbf{File} & \textbf{Finding / recommendation} \\
+\midrule
+\endhead
+\file{src/metrics/Evaluation.py} &
+  \textbf{Duplicate} of \file{src/modeling/Evaluation.py} (same class, methods
+  reordered). All active notebooks import \code{from src.modeling.Evaluation};
+  none import the \file{metrics} copy. \emph{Delete the \file{metrics} copy} and
+  keep a single source. \\
+\file{src/modeling/Modeling\_old.py} &
+  Superseded deterministic \code{Modeling}. Not imported anywhere.
+  \emph{Remove} (history is in git). \\
+\file{src/modeling/UncertaintyEstimatorAGL.py} &
+  Earlier UA approach (separate \code{sigma\_oof} model on absolute residuals,
+  uses scalers). Incompatible with the current Model A/B + NNLS pipeline; not
+  imported. \emph{Remove or archive.} \\
+\file{src/modeling/UncertaintyEstimatorH2O.py} &
+  H2O-era variant of the above; superseded by the AutoGluon migration. Not
+  imported. \emph{Remove or archive.} \\
+\file{src/processing/ColdDrawingProcessingHelper.py} &
+  Not imported by any active notebook/script. Confirm it is not pending for the
+  cold-drawing work before removing; otherwise move under a clearly-WIP path. \\
+\file{src/metrics/Evaluations.py} (plural) &
+  Deterministic-controller metrics (\code{gaussian\_nll},
+  \code{select\_models}, \dots), imported only by deprecated/deterministic
+  notebooks. Keep only if the deterministic controller is still referenced;
+  otherwise archive. \\
+\file{notebooks/deprecated/*} &
+  \file{OLD\_annealing\_iacs\_benchmark}, \file{annealing\_iacs} (old),
+  \file{annealing\_tests}, \file{annealing\_uts\_old},
+  \file{annealing\_uts\_fixed\_v1}. Superseded by
+  \file{notebooks/modeling/annealing\_*\_fixed.ipynb}. Already isolated under
+  \file{deprecated/}; safe to prune once nothing references them. \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Naming nits (non-blocking).} Two near-homonym pairs invite mistakes:
+\file{Evaluation.py} vs \file{Evaluations.py}, and \file{Plots.py} vs
+\file{Visualization.py}. Consider consolidating each pair, or renaming the
+deterministic-era file with a \code{\_deterministic} suffix, so a new reader can
+tell at a glance which belongs to the uncertainty-aware path.
+
+\paragraph{Consistency note.} The legacy \code{scale\_and\_pred} /
+\code{quick\_linear\_regression} methods still live inside the
+uncertainty-aware \code{Modeling}. They are harmless but slightly blur the
+class's single responsibility; a future cleanup could move them to a
+\code{LegacyModeling} mixin if the deterministic path is fully retired.
+
+\end{document}
