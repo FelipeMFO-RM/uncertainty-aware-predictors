@@ -7,6 +7,19 @@
 
 ---
 
+## ⚡ TL;DR — I just want to run the annealing recommender
+
+**If you are a materials engineer and want the tool to suggest temperature/time settings for annealing, you do not need to read this whole document.** Go straight to **[▶️ Run the controller (step by step for non-developers)](#️-run-the-controller-step-by-step-for-non-developers)**. It walks you through, from zero:
+
+1. installing Python and the project,
+2. editing **one** settings file (`config/config_script_annealing_uncertainty.yaml`) to describe your material and your targets,
+3. running a single command,
+4. reading the results CSV.
+
+Everything above that section is background and is meant for the ML/engineering team maintaining the code. You can safely skip it.
+
+---
+
 ## Overview
 
 This project builds a probabilistic **surrogate model** (predictor, ML supervised model) to support the **model-based controller** (digital twin) that chooses process parameters to hit target material properties during a chain of three industrial treatment steps. In production, intermediate measurements are not always available — only a final quality check after annealing — so the controller must reason about the entire process chain in advance.
@@ -64,61 +77,174 @@ Once surrogates emit calibrated distributions, the controller sweeps a dense (te
 
 This replaces the deterministic controller's binary `pred ≥ min` test with a probabilistic one, and is the `P(y ≥ y_target) ≥ 1 − δ` format the digital twin is graded on.
 
-## Repository layout
+---
 
-```
-.
-├── README.md
-├── requirements.txt
-├── config/
-│   └── Variables.py                          # YAML-backed config accessor
-├── data/
-│   └── raw/                                   # one CSV per surrogate
-├── models/                                    # persisted AutoGluon bundles + experiment logs
-├── notebooks/
-│   ├── modeling/                              # reference per-surrogate pipelines
-│   │   ├── annealing_iacs_fixed.ipynb         #   <- reference implementation
-│   │   ├── annealing_uts_fixed.ipynb
-│   │   └── cold_drawing_uts_*.ipynb
-│   ├── experiments/                           # grid sweeps + controller
-│   │   ├── run_experiments_iacs.ipynb
-│   │   ├── run_experiments_uts.ipynb
-│   │   └── mbc_annealing_uncertainty.ipynb
-│   ├── exploration/                           # EDA
-│   └── deprecated/                            # superseded notebooks
-├── scripts/
-│   └── script_mbc_annealing_uncertainty.py    # stakeholder-runnable controller
-└── src/
-    ├── modeling/
-    │   ├── Modeling.py                        # core: all uncertainty-aware statistics
-    │   ├── Evaluation.py                      # regression + calibration metrics, rollouts
-    │   ├── Experiments.py                     # config-driven training runner + logging
-    │   └── MBCInference.py                    # bundle loading, grid, Monte Carlo propagation
-    ├── metrics/
-    │   └── ProbabilisticEvaluation.py         # chance constraints, cost, selection
-    ├── processing/Processing.py
-    ├── feature_engineering/
-    │   ├── FeatureEngineering.py              # labelling, stratified folds, augmentation
-    │   └── Scaler.py                          # deterministic path only
-    ├── visualization/Plots.py
-    ├── DataLoader.py                          # LoaderHelper: pickle/model loading
-    └── DataDumper.py
+## ▶️ Run the controller (step by step for non-developers)
+
+**Goal of this section:** you have a copper alloy in a known starting state, and you want the tool to tell you which **annealing temperature and time** to use so that the final IACS and tensile strength meet your minimum requirements — with a stated probability. You do **not** need to know Python. Just follow the steps in order.
+
+> 💡 You only ever edit **one file**: `config/config_script_annealing_uncertainty.yaml`. Everything else is done by copy-pasting commands.
+
+### Step 1 — Install Python (once per machine)
+
+Install **Python 3.11 or newer** from [python.org/downloads](https://www.python.org/downloads/).
+On the first Windows install screen, **tick the box "Add Python to PATH"** before clicking Install. That box matters; if you miss it the later commands won't work.
+
+To confirm it worked, open a terminal (on Windows: press the Start key, type `PowerShell`, press Enter) and run:
+
+```bash
+python --version
 ```
 
-A trained surrogate is persisted as a self-contained **bundle**:
+You should see something like `Python 3.11.x`. If instead you get an error, reinstall Python with the PATH box ticked.
+
+### Step 2 — Download the project (once)
+
+You need **Git** ([git-scm.com/downloads](https://git-scm.com/downloads)). Then, in the terminal, run these lines one at a time:
+
+```bash
+git clone <repo-url>
+cd uncertainty-aware-predictors
+```
+
+Replace `<repo-url>` with the address your team gives you (it looks like `https://github.com/.../uncertainty-aware-predictors.git`). The `cd` line moves you *into* the project folder; every command after this must be run from there.
+
+### Step 3 — Create an isolated environment and install the tools (once)
+
+Copy-paste the block for your operating system. This creates a private sandbox (`.venv`) so the project's packages don't interfere with anything else on your computer, then installs them.
+
+**Windows (PowerShell):**
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+**macOS / Linux:**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+The last line downloads everything the tool needs (this can take a few minutes the first time). When it finishes, you'll see your terminal prompt now starts with `(.venv)` — that means the sandbox is active.
+
+> ⚠️ **Every new terminal session**, before running the tool, re-activate the sandbox with the `activate` line from above (the `python -m venv` line is only needed the very first time). If your prompt already shows `(.venv)`, you're good.
+
+### Step 4 — Tell the tool about your material and your targets
+
+Open the file **`config/config_script_annealing_uncertainty.yaml`** in any text editor (Notepad works). This is the only file you edit. It looks like this, and the comments explain each line:
+
+```yaml
+# A short name for THIS run. Change it every time you try a new scenario,
+# so results don't overwrite each other. Results are saved in a folder
+# with this name.
+identifier: my_first_run
+
+# Where results are written (leave as-is unless told otherwise).
+output_path: data/enriched/mbc_annealing_uncertainty_script_results
+
+# The trained models to use (leave as-is unless the team gives you new paths).
+bundle_dirs:
+  iacs: models/annealing_iacs/experiments/annealing-v1-best-quality
+  uts:  models/annealing_uts/experiments/annealing-uts-v1-best_quality
+
+# >>> YOUR MATERIAL'S STARTING STATE <<<
+# Fill these with the measured properties of the material BEFORE annealing.
+material_properties:
+  purity: 99.95            # material purity (%)
+  iacs: 98.47              # conductivity before annealing (%IACS)
+  initial_diameter: 1.2    # diameter (mm)
+  tensile_strength: 250.0  # tensile strength before annealing (MPa)
+
+# >>> THE RANGE OF SETTINGS THE TOOL IS ALLOWED TO TRY <<<
+# The tool tests every temperature/time combination in these ranges.
+operational_limits:
+  temperature: [523, 723]  # min, max temperature to try (Kelvin)
+  time: [30, 120]          # min, max time to try (minutes)
+step:
+  temperature: 10          # test every 10 K
+  time: 5                  # test every 5 min
+
+# >>> YOUR MINIMUM ACCEPTABLE RESULTS <<<
+# The tool only keeps settings expected to reach AT LEAST these values.
+min_setpoints:
+  iacs: 99.5               # minimum final conductivity (%IACS)
+  tensile_strength: 210.0  # minimum final tensile strength (MPa)
+
+# How sure do you want to be? delta = 0.10 means "keep only settings with
+# at least a 90% probability of hitting ALL minimums". Raise delta to be
+# less strict (more options), lower it to be more strict (fewer, safer options).
+delta: 0.10
+
+# Advanced knobs — leave the defaults unless the team advises otherwise.
+kappa: 1.645
+ood_gamma: 1.0
+best_metric: rmse
+
+# Which "best" operating points to report (leave as-is).
+selection_spec_low:
+  lowest_time: time
+  lowest_temperature: temperature
+  lowest_cost: cost
+  lowest_cost_phys: cost_phys
+selection_spec_high:
+  safest_iacs: pr_success_iacs
+  safest_combined: pr_success_all
+```
+
+**What you will typically change each run:**
+
+- **`identifier`** — give each scenario a new name (e.g. `batch_A_high_purity`). This keeps runs from overwriting each other.
+- **`material_properties`** — the actual measured state of the material you're about to anneal.
+- **`min_setpoints`** — the minimum final IACS and tensile strength you need.
+- **`operational_limits`** — the temperature/time window your furnace can actually do.
+- **`delta`** — your risk tolerance (see the comment above).
+
+Save the file when done.
+
+### Step 5 — Run the tool
+
+With the sandbox active (prompt shows `(.venv)`), run:
+
+```bash
+python scripts/script_mbc_annealing_uncertainty.py
+```
+
+You'll see log lines describing progress. When it prints **"Pipeline finished successfully."**, it's done.
+
+> If it prints **"No cell satisfies the chance constraint"**, no setting in your allowed range is likely enough to hit all your minimums at your chosen confidence. Options: raise `delta` (accept more risk), widen `operational_limits`, or lower your `min_setpoints`. The log also reports the best probability it found, so you can judge how far off you were.
+
+### Step 6 — Read your results
+
+Open the results file:
 
 ```
-<bundle_dir>/
-  artifacts.pkl   # weights, base_model_names, recalibration_c, variance_floor,
-                  # ood_ref, y_min, y_max, calibration tables
-  model_a/        # AutoGluon predictor (mean + epistemic)
-  model_b/        # AutoGluon predictor (aleatoric variance, log-space)
+data/enriched/mbc_annealing_uncertainty_script_results/<identifier>/mbc_ann_unc.csv
 ```
 
-A full developer-facing walkthrough of every module and method is in
-[`docs/code_architecture.pdf`](docs/code_architecture.tex).
+(where `<identifier>` is the name you set in Step 4). Open it in Excel or any spreadsheet app. Each row is a recommended operating point:
 
-## Quick start
+| Column | Meaning |
+|---|---|
+| `selection` | why this row was picked (e.g. `lowest_time` = fastest, `safest_combined` = highest overall probability of success) |
+| `temperature` / `temperature_C` | recommended annealing temperature (Kelvin / Celsius) |
+| `time` | recommended annealing time (minutes) |
+| `iacs_mu` / `tensile_strength_mu` | the predicted **average** final property |
+| `iacs_sigma` / `tensile_strength_sigma` | the uncertainty (± spread) on that prediction |
+| `pr_success_iacs` / `pr_success_tensile_strength` | probability that this setting meets each minimum |
+| `pr_success_all` | probability it meets **all** minimums at once |
+| `iacs_lcb` / `tensile_strength_lcb` | a conservative "worst-case-ish" estimate of the final property |
+
+**How to use it in practice:** if you want the fastest acceptable process, look at the `lowest_time` row. If you want the safest bet, look at `safest_combined` (highest `pr_success_all`). The `_sigma` and `pr_success_*` columns tell you how much to trust each recommendation.
+
+That's it — to try another scenario, change `identifier` and the relevant values in the YAML (Step 4) and run again (Step 5).
+
+---
+
+## 🛠️ Developer quick start
+
+The rest of this document is for the team maintaining and extending the models.
 
 ### Installation
 
@@ -212,15 +338,71 @@ print(preds)
 # 0   95.32          0.84          1.43          2.27         1.51             1.0
 ```
 
-### Run the controller
+### Run the controller (developer entry points)
 
 For a fixed material state, sweep the grid and export the best operating points:
 
 ```bash
+# interactive, with plots:
 jupyter lab notebooks/experiments/mbc_annealing_uncertainty.ipynb
-# or, headless, for stakeholders:
-python -m scripts.script_mbc_annealing_uncertainty
+# headless (same thing the stakeholder section above uses):
+python scripts/script_mbc_annealing_uncertainty.py
 ```
+
+## Repository layout
+
+```
+.
+├── README.md
+├── requirements.txt
+├── config/
+│   ├── Variables.py                          # YAML-backed config accessor
+│   └── config_script_annealing_uncertainty.yaml  # <- the file stakeholders edit
+├── data/
+│   └── raw/                                   # one CSV per surrogate
+├── models/                                    # persisted AutoGluon bundles + experiment logs
+├── notebooks/
+│   ├── modeling/                              # reference per-surrogate pipelines
+│   │   ├── annealing_iacs_fixed.ipynb         #   <- reference implementation
+│   │   ├── annealing_uts_fixed.ipynb
+│   │   └── cold_drawing_uts_*.ipynb
+│   ├── experiments/                           # grid sweeps + controller
+│   │   ├── run_experiments_iacs.ipynb
+│   │   ├── run_experiments_uts.ipynb
+│   │   └── mbc_annealing_uncertainty.ipynb
+│   ├── exploration/                           # EDA
+│   └── deprecated/                            # superseded notebooks
+├── scripts/
+│   └── script_mbc_annealing_uncertainty.py    # stakeholder-runnable controller
+└── src/
+    ├── modeling/
+    │   ├── Modeling.py                        # core: all uncertainty-aware statistics
+    │   ├── Evaluation.py                      # regression + calibration metrics, rollouts
+    │   ├── Experiments.py                     # config-driven training runner + logging
+    │   └── MBCInference.py                    # bundle loading, grid, Monte Carlo propagation
+    ├── metrics/
+    │   └── ProbabilisticEvaluation.py         # chance constraints, cost, selection
+    ├── processing/Processing.py
+    ├── feature_engineering/
+    │   ├── FeatureEngineering.py              # labelling, stratified folds, augmentation
+    │   └── Scaler.py                          # deterministic path only
+    ├── visualization/Plots.py
+    ├── DataLoader.py                          # LoaderHelper: pickle/model loading
+    └── DataDumper.py
+```
+
+A trained surrogate is persisted as a self-contained **bundle**:
+
+```
+<bundle_dir>/
+  artifacts.pkl   # weights, base_model_names, recalibration_c, variance_floor,
+                  # ood_ref, y_min, y_max, calibration tables
+  model_a/        # AutoGluon predictor (mean + epistemic)
+  model_b/        # AutoGluon predictor (aleatoric variance, log-space)
+```
+
+A full developer-facing walkthrough of every module and method is in
+[`docs/code_architecture.pdf`](docs/code_architecture.tex).
 
 ## Key concepts
 
