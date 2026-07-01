@@ -7,16 +7,16 @@
 
 ---
 
-## ⚡ TL;DR — I just want to run the annealing recommender
+## ⚡ TL;DR — I just want to run the annealing MBC
 
-**If you are a materials engineer and want the tool to suggest temperature/time settings for annealing, you do not need to read this whole document.** Go straight to **[▶️ Run the controller (step by step for non-developers)](#️-run-the-controller-step-by-step-for-non-developers)**. It walks you through, from zero:
+**For stakeholders that just want the tool to suggest temperature/time settings for annealing, you do not need to read this whole document.** Go straight to **[▶️ Run the controller (step by step)](#️-run-the-controller-step-by-step-for-non-developers)**. It walks you through, from zero:
 
 1. installing Python and the project,
 2. editing **one** settings file (`config/config_script_annealing_uncertainty.yaml`) to describe your material and your targets,
 3. running a single command,
 4. reading the results CSV.
 
-Everything above that section is background and is meant for the ML/engineering team maintaining the code. You can safely skip it.
+Everything above that section is background and the project explanation.
 
 ---
 
@@ -81,7 +81,7 @@ This replaces the deterministic controller's binary `pred ≥ min` test with a p
 
 ## ▶️ Run the controller (step by step for non-developers)
 
-**Goal of this section:** you have a copper alloy in a known starting state, and you want the tool to tell you which **annealing temperature and time** to use so that the final IACS and tensile strength meet your minimum requirements — with a stated probability. You do **not** need to know Python. Just follow the steps in order.
+**Goal of this section:** you have a copper alloy in a known starting state, and you want the tool to tell you which **annealing temperature and time** to use so that the final IACS and tensile strength meet your minimum requirements — with a stated probability.
 
 > 💡 You only ever edit **one file**: `config/config_script_annealing_uncertainty.yaml`. Everything else is done by copy-pasting commands.
 
@@ -243,8 +243,6 @@ That's it — to try another scenario, change `identifier` and the relevant valu
 ---
 
 ## 🛠️ Developer quick start
-
-The rest of this document is for the team maintaining and extending the models.
 
 ### Installation
 
