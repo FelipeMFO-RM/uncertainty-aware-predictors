@@ -120,3 +120,18 @@ class LoaderHelper:
             out["models"] = models
 
         return out
+
+    def load_config(self, config_path: str) -> dict:
+            """
+            Load a YAML configuration file into a plain dict.
+
+            Args:
+                config_path (str): Path to the .yaml/.yml config file.
+
+            Returns:
+                dict: Parsed configuration.
+            """
+            import yaml
+
+            with open(config_path, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f)

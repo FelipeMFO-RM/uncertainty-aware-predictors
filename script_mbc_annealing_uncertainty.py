@@ -1,6 +1,6 @@
 """
 Author : Felipe Matheus
-Created: 06/2026
+Created: 16/2026
 
 Uncertainty-Aware MBC Annealing Pipeline
 ========================================
@@ -74,13 +74,26 @@ def log_config_snapshot(config: dict) -> None:
         config["min_setpoints"], config.get("delta", 0.1),
     )
 
-
 def export_selections(
     selected: dict[str, pd.DataFrame],
     output_dir: Path,
     identifier: str,
+    targets: list[str],
 ) -> Path:
-    """Flatten the selection dict into one labelled, export-ready CSV."""
+    """Flatten the selection dict into one labelled, export-ready CSV.
+
+    Only stakeholder-facing columns are kept, in an explicit order built from
+    ``targets`` (the short names in ``config["min_setpoints"]``, e.g.
+    ``["iacs", "tensile_strength"]``). Everything else (raw features, variance
+    components, ood multipliers) is intentionally dropped. Column order::
+
+        selection, temperature, temperature_C, time,
+        {t}_mu, {t}_sigma          (per target)
+        pr_success_{t}             (per target)
+        pr_success_all,
+        cost, cost_phys,
+        {t}_lcb                    (per target)  <- last column
+    """
     rows = []
     for label, sub in selected.items():
         if len(sub):
@@ -89,19 +102,27 @@ def export_selections(
             rows.append(r)
     export_df = pd.DataFrame(rows)
 
-    keep = (["selection", "temperature", "time"]
-            + [c for c in export_df.columns
-               if c.endswith(("_mu", "_sigma")) or c.startswith("pr_success")
-               or c in ("cost", "cost_phys", "iacs_lcb", "uts_lcb")])
-    export_df = export_df[[c for c in keep if c in export_df.columns]]
     if "temperature" in export_df.columns:
         export_df["temperature_C"] = export_df["temperature"] - 273
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    out_path = output_dir / f"mbc_ann_unc_{identifier}.csv"
-    export_df.to_csv(out_path, index=False)
-    return out_path
+    ordered_cols = ["selection", "temperature", "temperature_C", "time"]
+    for t in targets:
+        ordered_cols += [f"{t}_mu", f"{t}_sigma"]
+    ordered_cols += [f"pr_success_{t}" for t in targets]
+    ordered_cols += ["pr_success_all"] #, "cost", "cost_phys"]
+    ordered_cols += [f"{t}_lcb" for t in targets]
 
+    # keep ONLY these columns, dropping everything else; ends at *_lcb
+    export_df = export_df[[c for c in ordered_cols if c in export_df.columns]]
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    subdir = output_dir / identifier
+    subdir.mkdir(exist_ok=True)
+
+    out_path = subdir / "mbc_ann_unc.csv"
+    export_df.to_csv(out_path, index=False)
+
+    return out_path
 
 # ---------------------------------------------------------------------------
 # Pipeline
@@ -124,7 +145,7 @@ def run_pipeline(config_path: str = CONFIG_PATH) -> None:
 
     # --- Load surrogate bundles ---------------------------------------------
     LOGGER.info("Loading surrogate bundles")
-    bundles = mbc.load_surrogates(config["bundle_dirs"])
+    bundles = mbc.load_surrogates_best(config["bundle_dirs"])
 
     # --- Build grid ----------------------------------------------------------
     LOGGER.info("Building parameter grid")
@@ -190,11 +211,12 @@ def run_pipeline(config_path: str = CONFIG_PATH) -> None:
 
     # --- Export --------------------------------------------------------------
     output_dir = Path(config["output_path"])
-    out_path = export_selections(selected, output_dir, config["identifier"])
+    targets = list(config["min_setpoints"].keys())
+    out_path = export_selections(selected, output_dir, config["identifier"], targets=targets)
     LOGGER.info("Selections saved to %s", out_path)
 
     # also dump the full feasible grid for auditing
-    full_path = output_dir / f"mbc_ann_unc_{config['identifier']}_full_grid.csv"
+    full_path = output_dir / Path(config['identifier']) / f"mbc_ann_unc_full_grid.csv"
     df_cost.to_csv(full_path, index=False)
     LOGGER.info("Full feasible grid saved to %s", full_path)
 

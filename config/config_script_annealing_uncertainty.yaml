@@ -1,0 +1,44 @@
+# config/config_script_annealing_uncertainty.yaml
+identifier: test_script_run1
+output_path: data/enriched/mbc_annealing_uncertainty_script_results
+
+# Each bundle dir holds artifacts.pkl + model_a/ + model_b/
+# Point these at the run folders produced by Section 10 of the annealing
+# notebooks, or any <run_dir> from ExperimentRunner. If you point at a TAG
+# folder (multiple runs inside), the script auto-picks the best run by RMSE.
+bundle_dirs:
+  iacs: models/annealing_iacs/experiments/annealing-v1-best-quality
+  uts:  models/annealing_uts/experiments/annealing-uts-v1-best_quality
+
+# Fixed material state: every non-grid feature the surrogates need.
+# IACS needs: purity, iacs        UTS needs: purity, initial_diameter, tensile_strength
+material_properties:
+  purity: 99.95
+  iacs: 98.47
+  initial_diameter: 1.2
+  tensile_strength: 250.0
+
+operational_limits:
+  temperature: [523, 723]   # Kelvin
+  time: [30, 120]           # minutes
+step:
+  temperature: 10
+  time: 5
+
+min_setpoints:
+  iacs: 99.5
+  tensile_strength: 210.0
+
+delta: 0.50        # keep cells with Pr(all setpoints) >= 1 - delta
+kappa: 1.645       # one-sided 95% lower confidence bound for risk ranking
+ood_gamma: 1.0     # OOD sigma-inflation strength
+best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
+
+selection_spec_low:
+  lowest_time: time
+  lowest_temperature: temperature
+  lowest_cost: cost
+  lowest_cost_phys: cost_phys
+selection_spec_high:
+  safest_iacs: pr_success_iacs
+  safest_combined: pr_success_all
