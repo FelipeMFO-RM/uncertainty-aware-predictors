@@ -12,9 +12,10 @@
 **For stakeholders that just want the tool to suggest temperature/time settings for annealing, you do not need to read this whole document.** Go straight to **[▶️ Run the controller (step by step)](#️-run-the-controller-step-by-step-for-non-developers)**. It walks you through, from zero:
 
 1. installing Python and the project,
-2. editing **one** settings file (`config/config_script_annealing_uncertainty.yaml`) to describe your material and your targets,
-3. running a single command,
-4. reading the results CSV.
+2. Downloading the trained models on https://drive.google.com/drive/u/0/folders/1V03ltQXEXTpeFnHpCEB-9YZ42hyy0mkQ and adding it in the root directory of the project.
+3. editing **one** settings file (`config/config_script_annealing_uncertainty.yaml`) to describe your material and your targets. OBS: with new models being updated the `bundle_dirs` paths should also be updated in order to use the most recent and best models.
+4. running a single command,
+5. reading the results CSV.
 
 Everything above that section is background and the project explanation.
 
