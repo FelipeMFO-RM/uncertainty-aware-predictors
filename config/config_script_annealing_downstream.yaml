@@ -1,0 +1,52 @@
+# config/config_script_annealing_downstream.yaml
+identifier: downstream_propagation_pilot
+output_path: data/enriched/mbc_annealing_downstream_script_results
+
+# Downstream bundles: run dir OR TAG folder (best run auto-picked by metric).
+bundle_dirs:
+  iacs: models/annealing_iacs/experiments/annealing-v1-best-quality
+  uts:  models/annealing_uts/experiments/annealing-uts-v1-best_quality
+
+# Upstream bundle (grain size). Same rules: run dir or TAG folder.
+upstream_bundle_dir: models/annealing_grain_size/experiments/annealing-gs-v1-best_quality
+
+# Downstream feature fed by the upstream prediction. Leave null to use the
+# upstream TARGET name (recommended convention: "grain_size_final").
+downstream_feature: null
+
+# Fixed material state: every non-grid feature the surrogates need,
+# INCLUDING the upstream's own features (grain_size = INITIAL grain size).
+# Do NOT set grain_size_final here — it is filled per Monte Carlo sample.
+material_properties:
+  purity: 99.95
+  iacs: 98.47
+  grain_size: 100.0
+  initial_diameter: 1.2
+  tensile_strength: 250.0
+
+operational_limits:
+  temperature: [523, 723]   # Kelvin
+  time: [30, 120]           # minutes
+step:
+  temperature: 10
+  time: 5
+
+min_setpoints:
+  iacs: 99.5
+  tensile_strength: 210.0
+
+delta: 0.10        # keep cells with Pr(all setpoints) >= 1 - delta
+kappa: 1.645       # one-sided 95% lower confidence bound for risk ranking
+ood_gamma: 1.0     # OOD sigma-inflation strength
+best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
+k_samples: 200     # Monte Carlo trajectories per grid cell
+seed: 0
+
+selection_spec_low:
+  lowest_time: time
+  lowest_temperature: temperature
+  lowest_cost: cost
+  lowest_cost_phys: cost_phys
+selection_spec_high:
+  safest_iacs: pr_success_iacs
+  safest_combined: pr_success_all

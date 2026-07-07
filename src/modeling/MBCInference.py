@@ -476,3 +476,131 @@ class MBCInference:
             float(np.mean(np.sqrt(var_propagated))),
         )
         return out
+    # ------------------------------------------------------------------
+    # Agnostic downstream orchestration (used by NB + script identically)
+    # ------------------------------------------------------------------
+    def detect_downstream_consumers(
+        self,
+        bundles: dict[str, "SurrogateBundle"],
+        upstream: "SurrogateBundle",
+        feature_name: str | None = None,
+    ) -> dict[str, "SurrogateBundle"]:
+        """Find which downstream surrogates consume the upstream target.
+
+        The check is purely structural — a downstream bundle is a consumer
+        iff the upstream feed column is listed in ``bundle.features``. No
+        target names are hardcoded, so the same call works for grain size
+        feeding IACS/UTS today or any future upstream/downstream pair.
+
+        Parameters
+        ----------
+        bundles : dict[str, SurrogateBundle]
+            Candidate downstream surrogates (e.g. ``{"iacs": ..., "uts": ...}``).
+        upstream : SurrogateBundle
+            The upstream surrogate whose prediction may feed the others.
+        feature_name : str or None
+            Name of the downstream feature fed by the upstream prediction.
+            Defaults to ``upstream.target`` (e.g. ``"grain_size_final"``),
+            which is the recommended convention: name the downstream feature
+            exactly after the upstream target.
+
+        Returns
+        -------
+        dict[str, SurrogateBundle]
+            The subset of ``bundles`` that consume the upstream feed.
+        """
+        feat = feature_name or upstream.target
+        consumers = {k: b for k, b in bundles.items() if feat in b.features}
+        for key, b in bundles.items():
+            logger.info(
+                "Downstream '%s' (target=%s) %s upstream feature '%s'.",
+                key, b.target,
+                "CONSUMES" if key in consumers else "does not consume", feat,
+            )
+        return consumers
+
+    def predict_all_with_propagation(
+        self,
+        bundles: dict[str, "SurrogateBundle"],
+        upstream: "SurrogateBundle",
+        df_grid: pd.DataFrame,
+        downstream_feature: str | None = None,
+        k_samples: int = 200,
+        ood_gamma: float = 1.0,
+        seed: int = 0,
+    ) -> pd.DataFrame:
+        """Predict every surrogate, propagating the upstream where consumed.
+
+        Agnostic single entry point for the chained-annealing MBC: the
+        upstream (e.g. grain size) is predicted once over the grid; every
+        downstream bundle whose features include the upstream feed column
+        gets the full Monte Carlo propagation (its ``{s}_mu`` / ``{s}_sigma``
+        columns already INCLUDE the propagated upstream variance); every
+        other bundle is predicted plainly, exactly as ``predict_all`` would.
+
+        Because consumers' ``{s}_mu``/``{s}_sigma`` are overwritten in place
+        by their propagated versions, everything downstream of this call
+        (``add_success_probabilities``, LCB, selection, export) works
+        unchanged and never needs to know whether propagation happened.
+
+        Parameters
+        ----------
+        bundles : dict[str, SurrogateBundle]
+            Downstream surrogates keyed by alias.
+        upstream : SurrogateBundle
+            Upstream surrogate (its target feeds consumers' feature).
+        df_grid : pd.DataFrame
+            Fixed state + (temperature, time) grid. Must contain every
+            feature of the upstream and of the NON-consumer bundles; the
+            consumed feature itself is filled per Monte Carlo sample.
+        downstream_feature : str or None
+            Feed column name; defaults to ``upstream.target``.
+        k_samples, ood_gamma, seed
+            Forwarded to :meth:`propagate_upstream_to_downstream`.
+
+        Returns
+        -------
+        pd.DataFrame
+            Grid + upstream distribution columns + one distribution block
+            per downstream surrogate (propagated where consumed, plain
+            otherwise), plus ``{s}_sigma2_propagated`` for consumers.
+        """
+        feat = downstream_feature or upstream.target
+        consumers = self.detect_downstream_consumers(
+            bundles, upstream, feature_name=feat
+        )
+        if not consumers:
+            logger.warning(
+                "No downstream surrogate consumes '%s'. Falling back to "
+                "plain predict_all; upstream columns are still appended "
+                "for transparency.", feat,
+            )
+
+        # Upstream predicted once (its columns also come back from each
+        # propagate call; dedup below keeps the first copy).
+        out = self.predict_surrogate(upstream, df_grid, ood_gamma=ood_gamma)
+
+        for key, bundle in bundles.items():
+            if key in consumers:
+                preds = self.propagate_upstream_to_downstream(
+                    upstream=upstream,
+                    downstream=bundle,
+                    df_grid=df_grid,
+                    downstream_feature=feat,
+                    k_samples=k_samples,
+                    ood_gamma=ood_gamma,
+                    seed=seed,
+                )
+            else:
+                missing = [f for f in bundle.features if f not in df_grid.columns]
+                if missing:
+                    raise KeyError(
+                        f"Surrogate '{key}' needs features {missing} not "
+                        f"present in the grid. Provide them in "
+                        f"material_properties (or train it on '{feat}' to "
+                        f"receive the upstream propagation)."
+                    )
+                preds = self.predict_surrogate(bundle, df_grid, ood_gamma=ood_gamma)
+            new_cols = [c for c in preds.columns if c not in out.columns]
+            out = pd.concat([out, preds[new_cols]], axis=1)
+        return out

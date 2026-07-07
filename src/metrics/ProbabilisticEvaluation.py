@@ -43,6 +43,7 @@ class ProbabilisticEvaluation:
         min_setpoints: dict,
         surrogate_bounds: dict | None = None,
         modl=None,
+        max_setpoints: dict | None = None,
     ) -> pd.DataFrame:
         """Append ``Pr(Y >= y_target)`` for each constrained target.
 
@@ -63,6 +64,11 @@ class ProbabilisticEvaluation:
             If given, uses ``modl.pr_within_spec_truncated`` (truncated,
             renormalised). If None, falls back to a plain Gaussian
             ``1 - Phi((y_target - mu)/sigma)``.
+        max_setpoints : dict or None
+            Optional ``{short_name -> maximum acceptable value}`` for
+            targets constrained from above (e.g. a grain-size ceiling).
+            A short name may appear in ``min_setpoints``, ``max_setpoints``
+            or both; the probability is Pr(lo <= Y <= hi) accordingly.
 
         Returns
         -------
@@ -74,9 +80,15 @@ class ProbabilisticEvaluation:
         """
         out = df.copy()
         surrogate_bounds = surrogate_bounds or {}
+        max_setpoints = max_setpoints or {}
         prob_cols = []
 
-        for s, y_target in min_setpoints.items():
+        constrained = list(min_setpoints) + [
+            s for s in max_setpoints if s not in min_setpoints
+        ]
+        for s in constrained:
+            spec_lo = min_setpoints.get(s, -np.inf)
+            spec_hi = max_setpoints.get(s, np.inf)
             mu_col, sigma_col = f"{s}_mu", f"{s}_sigma"
             if mu_col not in out.columns or sigma_col not in out.columns:
                 raise KeyError(
@@ -92,11 +104,12 @@ class ProbabilisticEvaluation:
                 y_max = np.inf if y_max is None else y_max
                 pr = modl.pr_within_spec_truncated(
                     mu=mu, sigma=sigma,
-                    spec_lo=y_target, spec_hi=np.inf,
+                    spec_lo=spec_lo, spec_hi=spec_hi,
                     y_min=y_min, y_max=y_max,
                 )
             else:
-                pr = 1.0 - norm.cdf((y_target - mu) / sigma)
+                pr = (norm.cdf((spec_hi - mu) / sigma)
+                      - norm.cdf((spec_lo - mu) / sigma))
 
             col = f"pr_success_{s}"
             out[col] = pr
@@ -278,3 +291,144 @@ class ProbabilisticEvaluation:
         """
         mask = df[temperature_col].isin(temperatures) & df[time_col].isin(times)
         return df[mask].copy()
+    # ------------------------------------------------------------------
+    # Shared NB + script helpers (single source of truth; fix once here)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def validate_setpoints(
+        bundles: dict,
+        min_setpoints: dict,
+        max_setpoints: dict | None = None,
+    ) -> list[str]:
+        """Fail fast if a setpoint key does not match any surrogate short name.
+
+        Guards against the class of bug where the YAML says ``uts`` but the
+        surrogate's target is ``tensile_strength_final`` (short name
+        ``tensile_strength``): the mismatch used to surface only much later,
+        as a missing-column KeyError or a silently dropped export column.
+        Call this right after loading the bundles, BEFORE the (expensive)
+        grid prediction.
+
+        Parameters
+        ----------
+        bundles : dict
+            ``{alias -> SurrogateBundle}`` as returned by the loaders. Only
+            ``bundle.short_name`` is used, so any object exposing it works.
+        min_setpoints, max_setpoints : dict
+            Setpoint dicts whose keys must be surrogate short names.
+
+        Returns
+        -------
+        list[str]
+            The validated target short names, in ``min_setpoints`` order
+            (then any extra max-only keys) — ready to feed
+            :meth:`export_selections`.
+
+        Raises
+        ------
+        ValueError
+            Listing every unknown key and the available short names.
+        """
+        available = {b.short_name for b in bundles.values()}
+        max_setpoints = max_setpoints or {}
+        targets = list(min_setpoints) + [
+            s for s in max_setpoints if s not in min_setpoints
+        ]
+        unknown = [s for s in targets if s not in available]
+        if unknown:
+            raise ValueError(
+                f"Setpoint keys {unknown} do not match any loaded surrogate "
+                f"short name. Available: {sorted(available)}. Rename the "
+                f"YAML keys (min_setpoints/max_setpoints) to match."
+            )
+        logger.info(
+            "Setpoint keys validated against surrogates: %s", targets
+        )
+        return targets
+
+    @staticmethod
+    def export_selections(
+        selected: dict,
+        output_dir,
+        identifier: str,
+        targets: list[str],
+        filename: str = "mbc_ann_unc.csv",
+        include_costs: bool = False,
+    ):
+        """Flatten the selection dict into one labelled, export-ready CSV.
+
+        Single source of truth for the stakeholder export, shared by the
+        MBC notebooks and the standalone scripts (fix here, fixed
+        everywhere). Only stakeholder-facing columns are kept, in an
+        explicit order built from ``targets`` (the short names in
+        ``config["min_setpoints"]``). Everything else (raw features,
+        variance components, ood multipliers) is intentionally dropped.
+        Column order::
+
+            selection, temperature, temperature_C, time,
+            {t}_mu, {t}_sigma          (per target)
+            pr_success_{t}             (per target)
+            pr_success_all,
+            [cost, cost_phys]          (only if include_costs=True)
+            {t}_lcb                    (per target)  <- last column
+
+        Parameters
+        ----------
+        selected : dict[str, pd.DataFrame]
+            ``{selection_label -> single-row frame}`` from the select_* methods.
+        output_dir : path-like
+            Base output folder; the CSV lands in ``output_dir/identifier/``.
+        identifier : str
+            Run identifier (also the subfolder name).
+        targets : list[str]
+            Surrogate short names controlling per-target columns and their
+            order — pass ``list(config["min_setpoints"].keys())`` or the
+            output of :meth:`validate_setpoints`.
+        filename : str
+            CSV file name inside the identifier subfolder.
+        include_costs : bool
+            Whether to include the normalised ``cost``/``cost_phys`` columns
+            (off by default: stakeholders asked for the lean layout).
+
+        Returns
+        -------
+        pathlib.Path or None
+            Path of the written CSV, or None when there was nothing to export.
+        """
+        from pathlib import Path
+
+        rows = []
+        for label, sub in selected.items():
+            if len(sub):
+                r = sub.iloc[0].copy()
+                r["selection"] = label
+                rows.append(r)
+        if not rows:
+            logger.warning("No selections to export.")
+            return None
+
+        export_df = pd.DataFrame(rows)
+        if "temperature" in export_df.columns:
+            export_df["temperature_C"] = export_df["temperature"] - 273
+
+        ordered_cols = ["selection", "temperature", "temperature_C", "time"]
+        for t in targets:
+            ordered_cols += [f"{t}_mu", f"{t}_sigma"]
+        ordered_cols += [f"pr_success_{t}" for t in targets]
+        ordered_cols += ["pr_success_all"]
+        if include_costs:
+            ordered_cols += ["cost", "cost_phys"]
+        ordered_cols += [f"{t}_lcb" for t in targets]
+
+        # keep ONLY these columns, dropping everything else; ends at *_lcb
+        export_df = export_df[[c for c in ordered_cols if c in export_df.columns]]
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        subdir = output_dir / identifier
+        subdir.mkdir(exist_ok=True)
+
+        out_path = subdir / filename
+        export_df.to_csv(out_path, index=False)
+        logger.info("Exported %d selections to %s", len(export_df), out_path)
+        return out_path
