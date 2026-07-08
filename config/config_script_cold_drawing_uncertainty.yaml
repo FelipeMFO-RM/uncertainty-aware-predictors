@@ -1,0 +1,44 @@
+# config/config_script_cold_drawing_uncertainty.yaml
+identifier: cd_routes_pilot
+output_path: data/enriched/mbc_cold_drawing_uncertainty_script_results
+
+# Downstream bundles: run dir OR TAG folder (best run auto-picked by metric).
+# Add grain_size / iacs entries when those cold-drawing bundles exist; the
+# rollout detects the state chaining structurally and adapts by itself.
+bundle_dirs:
+  uts: models/cold_drawing_uts/experiments/cd-uts-v1-best_quality
+  # grain_size: models/cold_drawing_grain_size/experiments/cd-gs-v1-best_quality
+  # iacs: models/cold_drawing_iacs/experiments/cd-iacs-v1-best_quality
+
+# Fixed material state: every non-geometry, non-chained feature the
+# surrogates need. original_<name> doubles as the pass-1 fallback for the
+# chained state features (initial_tensile_strength <- original_tensile_strength).
+material_properties:
+  purity: 99.9
+  original_tensile_strength: 280.0
+  # original_grain_size: 40.0
+
+# Optional explicit pass-1 state overrides ({feature: value}); usually empty
+# because the original_* fallback covers it.
+init_state: {}
+
+# Route generation (mirrors the deterministic config_script_cold-drawing.yaml)
+sequence_generation:
+  original_diameter: 2.0    # mm
+  final_diameter: 1.2       # mm
+  steps: [0.1, 0.2, 0.3, 0.4]
+  rr_max: 80.0              # % per pass
+  max_passes: 20
+  max_sequences: 2000
+
+# Chance constraints on the FINAL state (short_name -> bound)
+min_setpoints:
+  tensile_strength: 445.0
+# max_setpoints:            # e.g. a grain-size ceiling, when the bundle exists
+#   grain_size: 30.0
+
+delta: 0.10        # keep routes with Pr(all setpoints) >= 1 - delta
+k_samples: 200     # Monte Carlo trajectories per route
+seed: 0
+best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
+top_n_export: 20   # rows in the stakeholder CSV (full audit dump is separate)

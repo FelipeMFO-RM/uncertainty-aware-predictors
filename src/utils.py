@@ -1,6 +1,4 @@
 import numpy as np
-import h2o
-from h2o.automl import get_leaderboard
 
 
 def stop_nb(msg="Stopping notebook here."):
@@ -8,6 +6,8 @@ def stop_nb(msg="Stopping notebook here."):
 
 
 def pick_best_non_ensemble(aml):
+    import h2o  # lazy: heavy legacy dependency, only this helper needs it
+    from h2o.automl import get_leaderboard
     """
     Return the top non-StackedEnsemble model from an AutoML run.
     Works whether or not the leaderboard exposes `algo`.

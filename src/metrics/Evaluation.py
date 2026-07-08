@@ -244,6 +244,38 @@ class Evaluation:
         return rmse_final / (np.sqrt(n_passes_typical) * rmse_one)
 
     @staticmethod
+    @staticmethod
+    def one_step_metrics_by(
+        df: pd.DataFrame,
+        y_col: str,
+        mu_col: str,
+        sigma_col: str,
+        by: str = "pass_number",
+        alphas: tuple = (0.9,),
+    ) -> pd.DataFrame:
+        """One-step metrics grouped by a column (typically pass_number).
+
+        The one-step counterpart of ``pass_by_pass_curve``: whereas the
+        rollout curve shows how errors COMPOUND when predictions feed
+        predictions, this table shows how the model performs per pass when
+        every input is TRUE data. Comparing the two isolates the
+        compounding contribution from the intrinsic per-pass difficulty.
+        """
+        rows = []
+        for g, gdf in df.groupby(by):
+            m = Evaluation.one_step_metrics(
+                y_true=gdf[y_col].to_numpy(),
+                mu=gdf[mu_col].to_numpy(),
+                sigma=gdf[sigma_col].to_numpy(),
+                alphas=alphas,
+            )
+            row = {by: g, "n_rows": len(gdf),
+                   "rmse": m["rmse"], "mae": m["mae"]}
+            for a in alphas:
+                row[f"cov_{a}"] = m["coverage"][a]
+            rows.append(row)
+        return pd.DataFrame(rows).sort_values(by).reset_index(drop=True)
+
     def metrics_on_dataframe(
         df: pd.DataFrame,
         target: str,

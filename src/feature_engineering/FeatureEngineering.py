@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
@@ -5,6 +7,9 @@ from typing import Any, Dict, Optional
 from collections import deque
 import itertools
 
+
+
+logger = logging.getLogger(__name__)
 
 class FeatureEngineering:
     """Class of feature engineering."""
@@ -668,6 +673,73 @@ class FeatureEngineering:
         )
 
         return df
+
+    @staticmethod
+    def add_group_fold_column(
+        df: pd.DataFrame,
+        group_col: str,
+        n_folds: int = 5,
+        seed: int = 42,
+        col: str = "fold_id",
+    ) -> pd.DataFrame:
+        """Assign WHOLE groups (wires) to folds, balanced by group size.
+
+        Cold-drawing rows of the same wire are statistically dependent
+        (pass i+1 inherits the state of pass i), so plain row-level K-fold
+        leaks information between train and validation. This builder keeps
+        every wire intact in exactly one fold and greedily balances fold
+        sizes by row count — since each wire spans passes 1..n, every fold
+        automatically receives a MIX of pass numbers (no fold ends up
+        holding all the 4th/5th passes), which is the stratification-by-pass
+        behaviour the evaluation needs.
+
+        The returned column is meant to be passed to AutoGluon as the
+        ``groups`` bagging column (via ``fit_model_a(groups=col)``), making
+        the internal bag folds group-aware and the OOF predictions honest.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input frame containing ``group_col``.
+        group_col : str
+            Wire/sample identifier (e.g. ``group_experiment_id``).
+        n_folds : int
+            Number of folds (must match ``num_bag_folds`` of Model A).
+        seed : int
+            Shuffle seed (tie-breaking among equal-size groups).
+        col : str
+            Name of the fold column to create.
+
+        Returns
+        -------
+        pd.DataFrame
+            Copy with the integer fold column in ``[0, n_folds)``.
+        """
+        if group_col not in df.columns:
+            raise KeyError(f"Missing group column: {group_col}")
+        out = df.copy()
+        sizes = out.groupby(group_col).size()
+        if len(sizes) < n_folds:
+            raise ValueError(
+                f"Only {len(sizes)} groups for {n_folds} folds; reduce "
+                f"n_folds (or use leave-one-group-out)."
+            )
+        rng = np.random.default_rng(seed)
+        order = sizes.sample(frac=1.0, random_state=seed).sort_values(
+            ascending=False, kind="stable"
+        )
+        fold_rows = np.zeros(n_folds, dtype=int)
+        assign: dict = {}
+        for gid, n in order.items():
+            f = int(np.argmin(fold_rows))
+            assign[gid] = f
+            fold_rows[f] += int(n)
+        out[col] = out[group_col].map(assign).astype(int)
+        logger.info(
+            "Group folds on '%s': %d groups -> %d folds, rows per fold %s.",
+            group_col, len(sizes), n_folds, fold_rows.tolist(),
+        )
+        return out
 
     def add_stratified_fold_column(
         self,

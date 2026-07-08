@@ -94,6 +94,10 @@ class ExperimentConfig:
     # ---- Reproducibility ----
     fold_seed: int = 42
     use_shared_folds: bool = False  # if True, builds fold_id and passes groups=
+    # When set (e.g. "group_experiment_id" for cold drawing), the shared
+    # fold column keeps whole groups together (GroupKFold-style bagging):
+    # rows of the same wire never straddle train/validation inside a fold.
+    group_col: str | None = None
 
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
@@ -385,9 +389,15 @@ class ExperimentRunner:
         data = self.build_weight_column(df, cfg)
         groups_col = None
         if cfg.use_shared_folds:
-            data = self.add_fold_column(
-                data, n_folds=cfg.num_bag_folds_a, seed=cfg.fold_seed
-            )
+            if cfg.group_col:
+                data = FeatureEngineering().add_group_fold_column(
+                    data, group_col=cfg.group_col,
+                    n_folds=cfg.num_bag_folds_a, seed=cfg.fold_seed,
+                )
+            else:
+                data = self.add_fold_column(
+                    data, n_folds=cfg.num_bag_folds_a, seed=cfg.fold_seed
+                )
             groups_col = "fold_id"
 
         features = list(cfg.features)

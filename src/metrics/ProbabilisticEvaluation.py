@@ -432,3 +432,133 @@ class ProbabilisticEvaluation:
         export_df.to_csv(out_path, index=False)
         logger.info("Exported %d selections to %s", len(export_df), out_path)
         return out_path
+
+    # ------------------------------------------------------------------
+    # Cold drawing — route-level chance constraints, ranking, export
+    # ------------------------------------------------------------------
+    @staticmethod
+    def add_route_success_probabilities(
+        df_routes: pd.DataFrame,
+        finals: dict,
+        min_setpoints: dict,
+        bundles: dict,
+        max_setpoints: dict | None = None,
+    ) -> pd.DataFrame:
+        """Empirical Pr(final >= setpoint) per route from MC trajectories.
+
+        Unlike the annealing grid (Gaussian per cell, independence-product
+        for the combined probability), routes carry the K SHARED final-state
+        trajectories from ``ColdDrawingRollout.predict_sequences``. The
+        per-target probability is the empirical fraction of trajectories
+        meeting the constraint, and ``pr_success_all`` is the fraction
+        meeting ALL constraints SIMULTANEOUSLY — a joint probability that
+        respects the correlation between targets induced by the shared
+        state history (no independence assumption needed).
+
+        Parameters
+        ----------
+        df_routes : output of ``predict_sequences`` (one row per route).
+        finals : ``{sequence_id -> {bundle_key -> K samples}}``.
+        min_setpoints / max_setpoints : ``{short_name -> bound}``.
+        bundles : ``{bundle_key -> SurrogateBundle}`` to map short names.
+
+        Returns
+        -------
+        pd.DataFrame with ``pr_success_{short}`` per constrained target and
+        the joint ``pr_success_all``.
+        """
+        max_setpoints = max_setpoints or {}
+        short_to_key = {b.short_name: k for k, b in bundles.items()}
+        targets = list(min_setpoints) + [
+            s for s in max_setpoints if s not in min_setpoints
+        ]
+        unknown = [s for s in targets if s not in short_to_key]
+        if unknown:
+            raise ValueError(
+                f"Setpoint keys {unknown} do not match any bundle short name."
+                f" Available: {sorted(short_to_key)}."
+            )
+
+        out = df_routes.copy()
+        pr_cols = {s: np.empty(len(out)) for s in targets}
+        pr_all = np.empty(len(out))
+        for i, sid in enumerate(out["sequence_id"].astype(int)):
+            fin = finals[sid]
+            ok_all = None
+            for s in targets:
+                y = np.asarray(fin[short_to_key[s]], dtype=float)
+                ok = np.ones_like(y, dtype=bool)
+                if s in min_setpoints:
+                    ok &= y >= min_setpoints[s]
+                if s in max_setpoints:
+                    ok &= y <= max_setpoints[s]
+                pr_cols[s][i] = ok.mean()
+                ok_all = ok if ok_all is None else (ok_all & ok)
+            pr_all[i] = ok_all.mean() if ok_all is not None else 1.0
+        for s in targets:
+            out[f"pr_success_{s}"] = pr_cols[s]
+        out["pr_success_all"] = pr_all
+        return out
+
+    @staticmethod
+    def rank_routes(
+        df_routes: pd.DataFrame,
+        by: tuple = ("pr_success_all", "n_passes", "cum_reduction"),
+        ascending: tuple = (False, True, True),
+    ) -> pd.DataFrame:
+        """Rank feasible routes: safest first, then simplest.
+
+        Default ordering mirrors the deterministic formulation's criteria
+        (fewer passes, smaller cumulative die reduction) with the chance
+        constraint replacing the point-feasibility test: highest joint
+        Pr(success), then fewest passes, then smallest cumulative reduction.
+        """
+        return (
+            df_routes.sort_values(list(by), ascending=list(ascending))
+            .reset_index(drop=True)
+        )
+
+    @staticmethod
+    def export_routes(
+        df_routes: pd.DataFrame,
+        output_dir,
+        identifier: str,
+        targets: list[str],
+        filename: str = "mbc_cd_unc_routes.csv",
+        top_n: int | None = None,
+    ):
+        """Stakeholder export for cold-drawing routes (single source of truth).
+
+        Same fix-once philosophy as ``export_selections``: the notebook and
+        the standalone script both call this. Column order::
+
+            rank, route, n_passes, cum_reduction,
+            {t}_final_mu, {t}_final_sigma      (per target)
+            pr_success_{t}                     (per target)
+            pr_success_all
+        """
+        from pathlib import Path
+
+        if df_routes.empty:
+            logger.warning("No routes to export.")
+            return None
+        export_df = df_routes.copy().reset_index(drop=True)
+        if top_n is not None:
+            export_df = export_df.head(top_n)
+        export_df.insert(0, "rank", np.arange(1, len(export_df) + 1))
+
+        ordered = ["rank", "route", "n_passes", "cum_reduction"]
+        for t in targets:
+            ordered += [f"{t}_final_mu", f"{t}_final_sigma"]
+        ordered += [f"pr_success_{t}" for t in targets]
+        ordered += ["pr_success_all"]
+        export_df = export_df[[c for c in ordered if c in export_df.columns]]
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        subdir = output_dir / identifier
+        subdir.mkdir(exist_ok=True)
+        out_path = subdir / filename
+        export_df.to_csv(out_path, index=False)
+        logger.info("Exported %d routes to %s", len(export_df), out_path)
+        return out_path
