@@ -206,20 +206,22 @@ identifier: cd_routes_pilot
 output_path: data/enriched/mbc_cold_drawing_uncertainty_script_results
 
 # Downstream bundles: run dir OR TAG folder (best run auto-picked by metric).
-# Add grain_size / iacs entries when those cold-drawing bundles exist; the
-# rollout detects the state chaining structurally and adapts by itself.
+# ALL THREE surrogates active; comment out any bundle not trained yet — the
+# rollout detects the state chaining structurally and degrades gracefully.
 bundle_dirs:
+  grain_size: models/cold_drawing_grain_size/experiments/cd-gs-v1-best_quality
+  iacs: models/cold_drawing_iacs/experiments/cd-iacs-v1-best_quality
   uts: models/cold_drawing_uts/experiments/cd-uts-v1-best_quality
-  # grain_size: models/cold_drawing_grain_size/experiments/cd-gs-v1-best_quality
-  # iacs: models/cold_drawing_iacs/experiments/cd-iacs-v1-best_quality
 
 # Fixed material state: every non-geometry, non-chained feature the
 # surrogates need. original_<name> doubles as the pass-1 fallback for the
-# chained state features (initial_tensile_strength <- original_tensile_strength).
+# chained state features (initial_tensile_strength <- original_tensile_strength,
+# initial_iacs <- original_iacs, grain_size <- original_grain_size).
 material_properties:
   purity: 99.9
   original_tensile_strength: 280.0
-  # original_grain_size: 40.0
+  original_iacs: 100.5
+  original_grain_size: 40.0   # canonical um scalar (synthesized from *_equivalent_circle_diameter)
 
 # Optional explicit pass-1 state overrides ({feature: value}); usually empty
 # because the original_* fallback covers it.
@@ -236,9 +238,9 @@ sequence_generation:
 
 # Chance constraints on the FINAL state (short_name -> bound)
 min_setpoints:
+  iacs: 99.0
   tensile_strength: 445.0
-# max_setpoints:            # e.g. a grain-size ceiling, when the bundle exists
-#   grain_size: 30.0
+max_setpoints: {}           # e.g. {grain_size: 30.0} for a refinement spec
 
 delta: 0.10        # keep routes with Pr(all setpoints) >= 1 - delta
 k_samples: 200     # Monte Carlo trajectories per route

@@ -323,36 +323,83 @@ class CDHelper:
 
     # Add initial tensile strength
     @staticmethod
-    def add_initial_tensile_strength(
+    def add_derived_geometry(
         df: pd.DataFrame,
+        initial_col: str = "initial_diameter",
+        final_col: str = "final_diameter",
+        strain_col: str = "total_strain",
+        rr_col: str = "reduction_ratio",
+        overwrite: bool = True,
+    ) -> pd.DataFrame:
+        """Compute per-pass derived geometry from the measured diameters.
+
+        Per the Schema Glossary (source of truth), essays and simulation
+        schemas carry the MEASURED diameters; ``total_strain`` and
+        ``reduction_ratio`` are derived quantities and may be absent. This
+        helper (re)computes them from the single formula source
+        (``src.utils``):
+
+            total_strain    = 2 ln(Di / Df)          (per-pass true strain)
+            reduction_ratio = (1 - Df^2 / Di^2) * 100
+
+        so every dataset — essays or simulations, with or without the
+        columns — feeds the surrogates identically.
+
+        Parameters
+        ----------
+        overwrite : bool
+            When True (default) existing columns are recomputed from the
+            diameters (guarding against stale spreadsheet values).
+        """
+        from src.utils import get_reduction_ratio, get_total_drawing_strain
+
+        out = df.copy()
+        if overwrite or strain_col not in out.columns:
+            out[strain_col] = get_total_drawing_strain(
+                out[initial_col], out[final_col]
+            )
+        if overwrite or rr_col not in out.columns:
+            out[rr_col] = get_reduction_ratio(
+                out[initial_col], out[final_col]
+            )
+        return out
+
+    @staticmethod
+    def add_initial_state_column(
+        df: pd.DataFrame,
+        final_col: str,
+        original_col: str,
+        output_col: str,
         group_col: str = "group_experiment_id",
         experiment_id_col: str = "experiment_id",
         previous_experiment_id_col: str = "previous_experiment_id",
         pass_number_col: str = "pass_number",
-        tensile_final_col: str = "tensile_strength_final",
-        original_tensile_col: str = "original_tensile_strength",
-        output_col: str = "initial_tensile_strength",
     ) -> pd.DataFrame:
-        """
-        Add an initial tensile strength column to a grouped experiment
-        dataframe.
+        """Build a per-pass INITIAL state column from the experiment linkage.
 
-        For pass_number == 1, the initial tensile strength is taken from
-        the original tensile strength. For pass_number > 1, it is taken
-        from the final tensile strength of the previous experiment within
-        the same group.
+        Generic version of ``add_initial_tensile_strength`` — one method for
+        every chained state variable (tensile strength, IACS, grain size,
+        future elongation/yield strength), honouring the naming invariants:
+        for ``pass_number == 1`` the state comes from ``original_col``;
+        for later passes it is the PREVIOUS pass's ``final_col`` within the
+        same wire (``group_col``).
 
         Parameters
         ----------
-        df:
-            Input grouped dataframe.
-        output_col:
-            Name of the column to be created.
+        df : pd.DataFrame
+            Grouped experiment frame (after ``set_group_experiment``).
+        final_col : str
+            Target column of this variable (e.g. ``iacs_final``).
+        original_col : str
+            Fixed original descriptor (e.g. ``original_iacs``).
+        output_col : str
+            State column to create (e.g. ``initial_iacs`` — must match the
+            surrogate feature name so ``ColdDrawingRollout`` detects it).
 
         Returns
         -------
         pd.DataFrame
-            Dataframe with the added initial tensile strength column.
+            Copy with the state column filled for every pass.
         """
         out = df.copy()
         out[output_col] = pd.NA
@@ -360,13 +407,11 @@ class CDHelper:
         for _, g in out.groupby(group_col, sort=False):
             idx = g.index
 
-            final_map = g.set_index(
-                experiment_id_col
-            )[tensile_final_col].to_dict()
+            final_map = g.set_index(experiment_id_col)[final_col].to_dict()
 
             is_root = g[pass_number_col] == 1
             out.loc[idx[is_root], output_col] = (
-                g.loc[is_root, original_tensile_col].values
+                g.loc[is_root, original_col].values
             )
 
             non_root = g.loc[~is_root]
@@ -377,6 +422,33 @@ class CDHelper:
             ]
 
         return out
+
+    @staticmethod
+    def add_initial_tensile_strength(
+        df: pd.DataFrame,
+        group_col: str = "group_experiment_id",
+        experiment_id_col: str = "experiment_id",
+        previous_experiment_id_col: str = "previous_experiment_id",
+        pass_number_col: str = "pass_number",
+        tensile_final_col: str = "tensile_strength_final",
+        original_tensile_col: str = "original_tensile_strength",
+        output_col: str = "initial_tensile_strength",
+    ) -> pd.DataFrame:
+        """Backward-compatible thin wrapper over ``add_initial_state_column``.
+
+        Kept so existing notebooks keep working; new code should call the
+        generic method directly with the target's column names.
+        """
+        return CDHelper.add_initial_state_column(
+            df,
+            final_col=tensile_final_col,
+            original_col=original_tensile_col,
+            output_col=output_col,
+            group_col=group_col,
+            experiment_id_col=experiment_id_col,
+            previous_experiment_id_col=previous_experiment_id_col,
+            pass_number_col=pass_number_col,
+        )
 
     @staticmethod
     def get_by_experiment_group(

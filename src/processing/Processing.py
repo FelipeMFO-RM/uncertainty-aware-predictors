@@ -29,12 +29,12 @@ class Processing:
         df_float = df.drop(
             columns=drop_cols + ignore_columns, errors="ignore"
         )
-        df_float = df_float.applymap(
+        df_float = df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
             lambda x: (
                 str(x).replace(precision_tag, "") if pd.notnull(x) else x
             )
         )
-        df_float = df_float.applymap(
+        df_float = df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
             lambda x: (str(x).replace(" ", "") if pd.notnull(x) else x)
         )
 
