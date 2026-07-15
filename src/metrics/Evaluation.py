@@ -244,7 +244,6 @@ class Evaluation:
         return rmse_final / (np.sqrt(n_passes_typical) * rmse_one)
 
     @staticmethod
-    @staticmethod
     def one_step_metrics_by(
         df: pd.DataFrame,
         y_col: str,
@@ -276,6 +275,7 @@ class Evaluation:
             rows.append(row)
         return pd.DataFrame(rows).sort_values(by).reset_index(drop=True)
 
+    @staticmethod
     def metrics_on_dataframe(
         df: pd.DataFrame,
         target: str,
