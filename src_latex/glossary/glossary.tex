@@ -1,0 +1,257 @@
+\documentclass[11pt,a4paper]{article}
+
+% ---------------------------------------------------------------------------
+% Glossary of Acronyms & Symbols
+% Copper Alloy Digital Twin -- uncertainty-aware surrogate pipeline
+% ---------------------------------------------------------------------------
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}          % scalable fonts: required before microtype (MiKTeX)
+\usepackage[margin=1in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=blue!55!black,urlcolor=blue!55!black]{hyperref}
+
+\newcommand{\code}[1]{\texttt{\small #1}}
+
+% term list: bold term, hanging indent
+\newenvironment{terms}
+  {\begin{description}[style=unboxed,leftmargin=1.2em,itemsep=0.45em,parsep=0pt,
+                       font=\normalfont\bfseries]}
+  {\end{description}}
+
+\titleformat{\section}{\large\bfseries}{\thesection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.4em}{0.6em}
+
+\title{\textbf{Copper Alloy Digital Twin}\\[0.3em]
+\large Glossary of Acronyms and Symbols}
+\author{Uncertainty-aware surrogate pipeline}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\noindent
+Quick reference for the acronyms, symbols, and column names used across the
+notebooks, modules, and exported CSVs. Related concepts are grouped together
+(e.g.\ $\kappa$ and LCB). For the mathematical derivations see
+\code{copper\_digital\_twin\_v4}; for the module-level walkthrough see
+\code{code\_architecture}.
+
+\vspace{0.5em}
+\hrule
+
+% ===========================================================================
+\section{Architecture}
+% ===========================================================================
+
+\begin{terms}
+  \item[MBC --- Model-Based Controller] The decision layer that chooses process
+    parameters ($T$, $t$ for annealing; the sequence of passes for cold
+    drawing) from the surrogates' predictive distributions.
+
+  \item[Surrogate] A machine learning model emulating an expensive physical
+    process. Nine in total (three properties $\times$ three processes).
+
+  \item[Model A / Model B] Model A predicts the mean $\hat\mu$ and the
+    epistemic variance; Model B predicts the aleatoric variance. Together they
+    form the predictive distribution.
+
+  \item[Bundle] The unit of persistence: \code{artifacts.pkl} $+$
+    \code{model\_a/} $+$ \code{model\_b/}. The only interface between training
+    and the controllers.
+\end{terms}
+
+% ===========================================================================
+\section{Ensemble and weights}
+% ===========================================================================
+
+\begin{terms}
+  \item[NNLS --- Non-Negative Least Squares] Recovers the AutoGluon
+    WeightedEnsemble weights by solving $\min_{w \ge 0}\lVert Aw - b\rVert$,
+    with no dependence on AutoGluon's internal API.
+
+  \item[$w$ (weights)] Convex weights over the base learners ($w_m \ge 0$,
+    $\sum_m w_m = 1$). They act as an empirical posterior over models.
+
+  \item[\code{use\_weighted\_variance}] Flag toggling between $w$-weighted
+    statistics (default) and uniform statistics (robustness check).
+\end{terms}
+
+% ===========================================================================
+\section{Uncertainty decomposition}
+% ===========================================================================
+
+\begin{terms}
+  \item[$\sigma^2_{\text{epist}}$ (epistemic)] Disagreement among the base
+    learners. Model ignorance --- \emph{reducible} with more data or a better
+    model class.
+
+  \item[$\sigma^2_{\text{aleat}}$ (aleatoric)] Intrinsic process noise ---
+    \emph{irreducible} with more data.
+
+  \item[$\sigma_{\text{total}}$] $\sqrt{\sigma^2_{\text{epist}} +
+    \sigma^2_{\text{aleat}}}$, after recalibration. The standard deviation of
+    the predictive distribution --- \emph{not} the error of that particular
+    prediction.
+
+  \item[$\tilde r^2$] Model B's training target,
+    $\max\!\big((y - \hat\mu_{\text{oof}})^2 - \hat\sigma^2_{\text{epist}},\,0\big)$.
+    Subtracting the epistemic part from the squared residual isolates the
+    aleatoric one.
+
+  \item[OOF --- Out-Of-Fold] A prediction made by a model that did \emph{not}
+    see that row during training. Honest estimate of generalisation error;
+    the basis of NNLS, Model B, and calibration.
+\end{terms}
+
+% ===========================================================================
+\section{Calibration}
+% ===========================================================================
+
+\begin{terms}
+  \item[$\alpha$ (alpha)] Nominal coverage promised by an interval
+    ($0.5$, $0.8$, $0.9$, $0.95$): ``90\% of true values should fall inside''.
+
+  \item[coverage] Empirical coverage --- the fraction that actually fell
+    inside. Calibrated when $\widehat{\text{coverage}} \approx \alpha$.
+
+  \item[$c$ (\code{recalibration\_c})] Single scalar correcting
+    $\sigma \mapsto c\,\sigma$ so empirical coverage matches nominal at
+    $\alpha = 0.9$. $c > 1$ means the model was overconfident.
+
+  \item[$z_\alpha$] Standard normal quantile ($z_{0.9} = 1.645$,
+    $z_{0.95} = 1.960$). Sets the interval half-width.
+\end{terms}
+
+% ===========================================================================
+\section{Physical constraints}
+% ===========================================================================
+
+\begin{terms}
+  \item[\code{y\_min} / \code{y\_max}] Physical support of the target
+    (e.g.\ the $\sim$105 ceiling on \%IACS; grain size $> 0$).
+
+  \item[Truncated Gaussian] The predictive Gaussian clipped to
+    $[y_{\min}, y_{\max}]$, applied \emph{at inference only} (training
+    untouched).
+
+  \item[\code{mu\_trunc} / \code{sigma\_trunc}] Moments of that truncated law.
+    Always $\sigma_{\text{trunc}} < \sigma_{\text{total}}$ --- truncation
+    narrows.
+
+  \item[\code{p\_above\_max}] Diagnostic: the probability mass the untruncated
+    law placed \emph{beyond} the ceiling. High values mean the prediction is
+    leaning on the wall --- treat with suspicion.
+\end{terms}
+
+% ===========================================================================
+\section{Out-of-domain handling (OOD)}
+% ===========================================================================
+
+\begin{terms}
+  \item[OOD --- Out-Of-Distribution] An input outside the training cloud, where
+    tree ensembles extrapolate flat and overconfidently.
+
+  \item[Mahalanobis distance $d$] Distance accounting for the covariance of
+    the features; measures how unusual an input is.
+
+  \item[$d_{\text{ref}}$] The $95^{\text{th}}$ percentile of the training
+    distances --- the edge of the cloud.
+
+  \item[$\gamma$ (gamma) and $m(x)$]
+    $m(x) = \min\!\big(1 + \gamma \cdot \text{relative excess},\,
+    m_{\max}\big)$, the multiplier applied to $\sigma_{\text{epist}}$. Exactly
+    $1$ inside the cloud; grows smoothly outside, capped at $3$.
+\end{terms}
+
+% ===========================================================================
+\section{Decision layer (what the controller consumes)}
+% ===========================================================================
+
+\begin{terms}
+  \item[$\delta$ (delta)] Risk tolerance. \textbf{Filters}: keeps only cells or
+    routes with $\Pr(\text{success}) \ge 1 - \delta$. Binary (pass / fail).
+
+  \item[\code{pr\_success\_all}] Probability of meeting all setpoints. On the
+    annealing grid it is a product (independence assumed); for cold-drawing
+    routes it is the empirical \emph{joint} probability over the shared Monte
+    Carlo trajectories --- no independence assumption.
+
+  \item[Chance constraint] The form $P(y \ge y_{\text{target}}) \ge 1-\delta$,
+    replacing the deterministic controller's binary
+    \code{pred >= min} test.
+
+  \item[$\kappa$ (kappa) and LCB --- Lower Confidence Bound]
+    Always paired: $\mathrm{LCB} = \hat\mu - \kappa\,\hat\sigma$. With
+    $\kappa = 1.645$ there is a $\sim$95\% chance the true value lies above it.
+    \textbf{Ranks, never filters} --- among equal means it prefers the smaller
+    $\sigma$. It is a linear approximation of what \code{pr\_success\_all}
+    already does exactly.
+\end{terms}
+
+% ===========================================================================
+\section{Chained propagation}
+% ===========================================================================
+
+\begin{terms}
+  \item[Upstream / downstream] Producer vs.\ consumer. Grain size is upstream
+    of IACS; pass $i$ is upstream of pass $i+1$.
+
+  \item[MC (Monte Carlo) / $K$] Drawing $K = 200$ trajectories from the
+    upstream distribution instead of propagating only its mean. Without it,
+    the inherited variance is silently dropped.
+
+  \item[\code{sigma2\_propagated}] The share of the downstream $\sigma^2$
+    contributed by upstream uncertainty. Its fraction of the total answers:
+    ``would more grain-size data tighten the IACS forecast?''
+\end{terms}
+
+% ===========================================================================
+\section{Cold drawing}
+% ===========================================================================
+
+\begin{terms}
+  \item[One-step ahead] Every pass predicted from \emph{true} inputs. Per-pass
+    model quality, with no compounding.
+
+  \item[Multistep rollout] The prediction of pass $i$ feeds pass $i+1$. The gap
+    against one-step isolates error \textbf{compounding}.
+
+  \item[\code{compounding\_ratio}] How much the final error grows relative to
+    what independent errors would give. $\approx 1.0$ means $\sqrt{n}$-like
+    growth; $> 1.0$ means correlated errors compounding faster.
+
+  \item[GroupKFold / group folds] Whole wires per fold. Rows of the same wire
+    are dependent; random folds leak information and corrupt even Model B's
+    targets.
+
+  \item[DAG / DFS] The directed acyclic graph of reachable diameters and the
+    depth-first search enumerating routes $D_0 \rightarrow D_f$.
+
+  \item[\code{rr\_max}] Maximum admissible reduction ratio per pass (\%).
+    Prunes infeasible edges during graph construction.
+
+  \item[\code{total\_strain} / \code{reduction\_ratio}] Derived per-pass
+    geometry: $2\ln(D_i/D_f)$ and $(1 - D_f^2/D_i^2)\times 100$. Always
+    recomputed from the measured diameters.
+\end{terms}
+
+% ===========================================================================
+\section{Classical metrics}
+% ===========================================================================
+
+\begin{terms}
+  \item[MAE / RMSE / MAPE] Mean absolute error, root mean squared error, mean
+    absolute percentage error. Still reported alongside calibration --- they
+    answer different questions. Expected consistency:
+    $\mathbb{E}\big[\sigma_{\text{total}}\big] \approx \text{RMSE}$.
+\end{terms}
+
+\end{document}
