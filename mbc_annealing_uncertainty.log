@@ -455,3 +455,43 @@
 2026-07-07 16:21:03,925 | INFO | log_mbc_annealing_uncertainty | Selections saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-08_2_new-iacs_02\mbc_ann_unc.csv
 2026-07-07 16:21:03,929 | INFO | log_mbc_annealing_uncertainty | Full feasible grid saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-08_2_new-iacs_02\mbc_ann_unc_full_grid.csv
 2026-07-07 16:21:03,929 | INFO | log_mbc_annealing_uncertainty | Pipeline finished successfully.
+2026-07-21 17:02:43,522 | INFO | log_mbc_annealing_uncertainty | Starting uncertainty-aware MBC annealing pipeline
+2026-07-21 17:02:43,522 | INFO | log_mbc_annealing_uncertainty | Loading config from config/config_script_annealing_uncertainty.yaml
+2026-07-21 17:02:43,642 | INFO | log_mbc_annealing_uncertainty | material={'purity': 99.7637, 'iacs': 96.84, 'initial_diameter': 2.0, 'tensile_strength': 349.58} | temp_range=[473, 873] | time_range=[30, 120] | min_setpoints={'iacs': 99, 'tensile_strength': 220.0} | delta=0.1
+2026-07-21 17:02:43,646 | INFO | log_mbc_annealing_uncertainty | Loading surrogate bundles
+2026-07-21 17:02:43,676 | INFO | src.modeling.MBCInference | Resolved best bundle by rmse: annealing-v2-weight-3-best-quality__time_limit_a=600__num_bag_folds_a=20__weight_on_essay_rows=2.0__b7afe3bc
+2026-07-21 17:02:43,691 | INFO | src.modeling.MBCInference | Resolved best bundle by rmse: annealing-uts-v1-best_quality__time_limit_a=900__num_bag_folds_a=10__df848c54
+2026-07-21 17:02:51,563 | INFO | src.modeling.MBCInference | Loaded surrogate 'iacs' (features=['purity', 'iacs', 'temperature', 'time']) from models\annealing_iacs\experiments\annealing-v2-weight-3-best-quality\annealing-v2-weight-3-best-quality__time_limit_a=600__num_bag_folds_a=20__weight_on_essay_rows=2.0__b7afe3bc
+2026-07-21 17:02:52,443 | INFO | src.modeling.MBCInference | Loaded surrogate 'tensile_strength' (features=['purity', 'initial_diameter', 'tensile_strength', 'temperature', 'time']) from models\annealing_uts\experiments\annealing-uts-v1-best_quality\annealing-uts-v1-best_quality__time_limit_a=900__num_bag_folds_a=10__df848c54
+2026-07-21 17:02:52,456 | INFO | log_mbc_annealing_uncertainty | Building parameter grid
+2026-07-21 17:02:52,498 | INFO | log_mbc_annealing_uncertainty | Grid: 41 temps x 19 times = 779 cells
+2026-07-21 17:02:52,498 | INFO | log_mbc_annealing_uncertainty | Predicting predictive distributions
+2026-07-21 17:03:19,863 | INFO | src.modeling.Modeling | OOD inflation applied to 342/779 rows (max m=1.93).
+2026-07-21 17:03:38,210 | INFO | log_mbc_annealing_uncertainty | Computing success probabilities (chance constraints)
+2026-07-21 17:03:38,210 | INFO | src.metrics.ProbabilisticEvaluation | Probabilistic setpoints (delta=0.10 -> Pr>=0.90): kept 67 / 779 cells.
+2026-07-21 17:03:38,210 | INFO | log_mbc_annealing_uncertainty | Feasible cells (Pr >= 0.90): 67
+2026-07-21 17:03:38,210 | INFO | log_mbc_annealing_uncertainty | Computing cost functions
+2026-07-21 17:03:38,226 | INFO | log_mbc_annealing_uncertainty | Selecting operating points
+2026-07-21 17:03:38,265 | INFO | log_mbc_annealing_uncertainty | Selections saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_1\mbc_ann_unc.csv
+2026-07-21 17:03:38,272 | INFO | log_mbc_annealing_uncertainty | Full feasible grid saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_1\mbc_ann_unc_full_grid.csv
+2026-07-21 17:03:38,272 | INFO | log_mbc_annealing_uncertainty | Pipeline finished successfully.
+2026-07-21 17:09:22,192 | INFO | log_mbc_annealing_uncertainty | Starting uncertainty-aware MBC annealing pipeline
+2026-07-21 17:09:22,192 | INFO | log_mbc_annealing_uncertainty | Loading config from config/config_script_annealing_uncertainty.yaml
+2026-07-21 17:09:22,217 | INFO | log_mbc_annealing_uncertainty | material={'purity': 99.7637, 'iacs': 96.84, 'initial_diameter': 2.0, 'tensile_strength': 349.58} | temp_range=[473, 873] | time_range=[30, 120] | min_setpoints={'iacs': 100, 'tensile_strength': 220.0} | delta=0.2
+2026-07-21 17:09:22,217 | INFO | log_mbc_annealing_uncertainty | Loading surrogate bundles
+2026-07-21 17:09:22,217 | INFO | src.modeling.MBCInference | Resolved best bundle by rmse: annealing-v2-weight-3-best-quality__time_limit_a=600__num_bag_folds_a=20__weight_on_essay_rows=2.0__b7afe3bc
+2026-07-21 17:09:22,217 | INFO | src.modeling.MBCInference | Resolved best bundle by rmse: annealing-uts-v1-best_quality__time_limit_a=900__num_bag_folds_a=10__df848c54
+2026-07-21 17:09:22,499 | INFO | src.modeling.MBCInference | Loaded surrogate 'iacs' (features=['purity', 'iacs', 'temperature', 'time']) from models\annealing_iacs\experiments\annealing-v2-weight-3-best-quality\annealing-v2-weight-3-best-quality__time_limit_a=600__num_bag_folds_a=20__weight_on_essay_rows=2.0__b7afe3bc
+2026-07-21 17:09:22,752 | INFO | src.modeling.MBCInference | Loaded surrogate 'tensile_strength' (features=['purity', 'initial_diameter', 'tensile_strength', 'temperature', 'time']) from models\annealing_uts\experiments\annealing-uts-v1-best_quality\annealing-uts-v1-best_quality__time_limit_a=900__num_bag_folds_a=10__df848c54
+2026-07-21 17:09:22,752 | INFO | log_mbc_annealing_uncertainty | Building parameter grid
+2026-07-21 17:09:22,755 | INFO | log_mbc_annealing_uncertainty | Grid: 41 temps x 19 times = 779 cells
+2026-07-21 17:09:22,755 | INFO | log_mbc_annealing_uncertainty | Predicting predictive distributions
+2026-07-21 17:09:30,833 | INFO | src.modeling.Modeling | OOD inflation applied to 342/779 rows (max m=1.93).
+2026-07-21 17:09:37,826 | INFO | log_mbc_annealing_uncertainty | Computing success probabilities (chance constraints)
+2026-07-21 17:09:37,830 | INFO | src.metrics.ProbabilisticEvaluation | Probabilistic setpoints (delta=0.20 -> Pr>=0.80): kept 65 / 779 cells.
+2026-07-21 17:09:37,830 | INFO | log_mbc_annealing_uncertainty | Feasible cells (Pr >= 0.80): 65
+2026-07-21 17:09:37,830 | INFO | log_mbc_annealing_uncertainty | Computing cost functions
+2026-07-21 17:09:37,832 | INFO | log_mbc_annealing_uncertainty | Selecting operating points
+2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Selections saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc.csv
+2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Full feasible grid saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc_full_grid.csv
+2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Pipeline finished successfully.

@@ -146,6 +146,7 @@ class Modeling:
             **kwargs,  # <-- vai pro construtor
         )
         if groups is not None:
+            # To check if the folds are pre stablished
             predictor_kwargs["groups"] = groups
             fit_kwargs.pop("num_bag_folds")
 
@@ -702,6 +703,7 @@ class Modeling:
         X: np.ndarray, mean: np.ndarray, cov_inv: np.ndarray
     ) -> np.ndarray:
         diff = X - mean
+        # Equivalent to: np.sqrt((diff @ cov_inv * diff).sum(axis=1))
         return np.sqrt(np.einsum("ij,jk,ik->i", diff, cov_inv, diff))
 
     def ood_sigma_multiplier(
