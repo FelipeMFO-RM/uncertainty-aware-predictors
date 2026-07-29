@@ -1,3 +1,5 @@
+from typing import Union
+
 import pandas as pd
 import numpy as np
 
@@ -26,16 +28,16 @@ class Processing:
         Returns:
             pd.DataFrame: Processed dataframe with float values.
         """
-        df_float = df.drop(
-            columns=drop_cols + ignore_columns, errors="ignore"
-        )
-        df_float = df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
-            lambda x: (
-                str(x).replace(precision_tag, "") if pd.notnull(x) else x
+        df_float = df.drop(columns=drop_cols + ignore_columns, errors="ignore")
+        df_float = (
+            df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
+                lambda x: (str(x).replace(precision_tag, "") if pd.notnull(x) else x)
             )
         )
-        df_float = df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
-            lambda x: (str(x).replace(" ", "") if pd.notnull(x) else x)
+        df_float = (
+            df_float.map(  # DataFrame.map (pandas>=2.1); applymap removed in pandas 3
+                lambda x: (str(x).replace(" ", "") if pd.notnull(x) else x)
+            )
         )
 
         df_float = df_float.astype(float)
@@ -56,7 +58,7 @@ class Processing:
             .dropna(axis=0)
             .rename(columns={"Ref": "id"})
             .reset_index(drop=True)
-            )
+        )
         return df_val
 
     def reorder_columns(self, df, columns_order):
@@ -67,17 +69,10 @@ class Processing:
             k = next(iter(columns_order))  # peek one item
             v = columns_order[k]
             if isinstance(k, int) and isinstance(v, str):  # {pos: name}
+                desired = [columns_order[i] for i in sorted(columns_order)]
+            elif isinstance(k, str) and isinstance(v, (int, float)):  # {name: pos}
                 desired = [
-                    columns_order[i] for i in sorted(columns_order)
-                ]
-            elif isinstance(k, str) and isinstance(
-                v, (int, float)
-            ):  # {name: pos}
-                desired = [
-                    k
-                    for k, _ in sorted(
-                        columns_order.items(), key=lambda kv: kv[1]
-                    )
+                    k for k, _ in sorted(columns_order.items(), key=lambda kv: kv[1])
                 ]
             else:  # fallback: dict insertion order
                 desired = list(columns_order.values())
@@ -106,15 +101,9 @@ class Processing:
         gs_ok = (~gs_pair) | (gsf < (gs - tol))
 
         # --- Tensile strength rule (optional) ---
-        if {"tensile_strength", "tensile_strength_final"}.issubset(
-            df.columns
-        ):
-            ts = pd.to_numeric(
-                df["tensile_strength"], errors="coerce"
-            )
-            tsf = pd.to_numeric(
-                df["tensile_strength_final"], errors="coerce"
-            )
+        if {"tensile_strength", "tensile_strength_final"}.issubset(df.columns):
+            ts = pd.to_numeric(df["tensile_strength"], errors="coerce")
+            tsf = pd.to_numeric(df["tensile_strength_final"], errors="coerce")
             ts_pair = ts.notna() & tsf.notna()
             ts_ok = (~ts_pair) | (tsf > (ts + tol))
         else:
@@ -138,3 +127,36 @@ class Processing:
             f"Dropped: {len(df) - len(kept)}"
         )
         return kept
+
+    def process_annealing_elongation(
+        self, features: list[str], target: str, df_schema: pd.DataFrame
+    ) -> Union[pd.DataFrame, pd.DataFrame]:
+        """Function to process data on annealing elongation
+
+        Args:
+            features (list[str]): List of feature column names
+            target (str): Name of the target column
+            df_schema (pd.DataFrame): downloaded raw schema data
+
+        Returns:
+            Union[pd.DataFrame, pd.DataFrame]: df processed and df validation.
+        """
+        # TODO when more data, so far AD-Hoc solution
+
+        df = df_schema[features + [target]].dropna().reset_index(drop=True).copy()
+
+        df["elongation"] = pd.to_numeric(
+            df["elongation"].astype(str).str.replace("%", "", regex=False).str.strip(),
+            errors="coerce",
+        )
+        df["elongation_final"] = pd.to_numeric(
+            df["elongation_final"]
+            .astype(str)
+            .str.replace("%", "", regex=False)
+            .str.strip(),
+            errors="coerce",
+        )
+
+        df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
+
+        return df, df_val

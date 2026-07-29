@@ -7,6 +7,8 @@ from scipy.stats import norm, truncnorm
 from sklearn.linear_model import LinearRegression
 from autogluon.tabular import TabularPredictor
 from h2o import H2OFrame
+import h2o
+from h2o.automl import H2OAutoML
 
 from ..feature_engineering.Scaler import ScalerHelpers
 from ..visualization.Plots import Plots
@@ -38,9 +40,7 @@ class Modeling:
     ) -> pd.DataFrame:
         """Scale features, predict with an H2O model, append predictions."""
         df_copy = df.copy()
-        feat_scalers = {
-            k: v for k, v in scalers.items() if k != target_variable
-        }
+        feat_scalers = {k: v for k, v in scalers.items() if k != target_variable}
         X_scaled = self.scla.apply_scalers(df=df_copy, scalers=feat_scalers)
 
         hf = H2OFrame(X_scaled)
@@ -123,8 +123,7 @@ class Modeling:
         """
 
         extra_cols = [
-            v for v in kwargs.values()
-            if isinstance(v, str) and v in df.columns
+            v for v in kwargs.values() if isinstance(v, str) and v in df.columns
         ]
         if groups is not None and groups in df.columns:
             extra_cols.append(groups)
@@ -150,9 +149,7 @@ class Modeling:
             predictor_kwargs["groups"] = groups
             fit_kwargs.pop("num_bag_folds")
 
-        predictor = TabularPredictor(
-            **predictor_kwargs
-        ).fit(train_df, **fit_kwargs)
+        predictor = TabularPredictor(**predictor_kwargs).fit(train_df, **fit_kwargs)
         return predictor
 
     def collect_oof_base_learners(self, predictor):
@@ -174,9 +171,7 @@ class Modeling:
                 pass
 
         model_names = list(oof_per_model.keys())
-        oof_matrix = np.stack(
-            [oof_per_model[n].values for n in model_names]
-        )
+        oof_matrix = np.stack([oof_per_model[n].values for n in model_names])
         return oof_matrix, model_names
 
     def recover_ensemble_weights(
@@ -238,17 +233,15 @@ class Modeling:
         """
         if use_weights:
             if weights is None:
-                raise ValueError(
-                    "weights must be provided when use_weights=True"
-                )
+                raise ValueError("weights must be provided when use_weights=True")
             w = weights[:, None]
             mu = (w * preds_matrix).sum(axis=0)
             diff = preds_matrix - mu[None, :]
-            sigma2_epist = (w * diff ** 2).sum(axis=0)
+            sigma2_epist = (w * diff**2).sum(axis=0)
         else:
             mu = preds_matrix.mean(axis=0)
             diff = preds_matrix - mu[None, :]
-            sigma2_epist = (diff ** 2).mean(axis=0)
+            sigma2_epist = (diff**2).mean(axis=0)
         return mu, sigma2_epist
 
     # =========================================================
@@ -271,10 +264,8 @@ class Modeling:
         diagnostics : dict
         """
         residuals_oof = np.asarray(y_true) - np.asarray(mu_oof)
-        sq_residuals = residuals_oof ** 2
-        r_tilde_sq = np.maximum(
-            sq_residuals - np.asarray(sigma2_epist_oof), 0.0
-        )
+        sq_residuals = residuals_oof**2
+        r_tilde_sq = np.maximum(sq_residuals - np.asarray(sigma2_epist_oof), 0.0)
 
         n_total = len(r_tilde_sq)
         n_truncated = int((r_tilde_sq == 0).sum())
@@ -344,6 +335,62 @@ class Modeling:
         return sigma2_aleat
 
     # =========================================================
+    # H2O AutoML Comparison
+    # =========================================================
+
+    def fit_h2o_automl(
+        self,
+        df: pd.DataFrame,
+        target: str,
+        features: list[str],
+        weight_on_essay_rows: int,
+        num_bag_folds: int,
+        use_shared_folds: bool,
+        time_limit: int
+    ):
+
+        h2o.init(nthreads=-1, max_mem_size="4G")
+        h2o_cols = features + [target]
+
+        if weight_on_essay_rows > 1:
+            h2o_cols.append("weight_col")
+
+        if use_shared_folds:
+            h2o_cols.append("fold_id")
+        train_h2o = h2o.H2OFrame(df[h2o_cols])
+        train_h2o[target] = train_h2o[target].asnumeric()
+        if use_shared_folds:
+            # fold_column must be categorical on the H2O side.
+            train_h2o["fold_id"] = train_h2o["fold_id"].asfactor()
+
+        aml_kwargs = dict(
+            max_runtime_secs=time_limit,
+            keep_cross_validation_predictions=True,
+            exclude_algos=["DeepLearning"],
+            sort_metric="RMSE",
+            seed=42,
+        )
+        if not use_shared_folds:
+            aml_kwargs["nfolds"] = (
+                num_bag_folds  # nfolds is ignored/conflicting with fold_column
+            )
+
+        aml_h2o = H2OAutoML(**aml_kwargs)
+
+        train_kwargs = dict(
+            x=features,
+            y=target,
+            training_frame=train_h2o,
+            weights_column="weight_col" if weight_on_essay_rows > 1 else None,
+        )
+        if use_shared_folds:
+            train_kwargs["fold_column"] = "fold_id"
+
+        aml_h2o.train(**train_kwargs)
+        return aml_h2o
+        # print(aml_h2o.leaderboard.head(10)
+
+    # =========================================================
     # Full predictive distribution
     # =========================================================
     def predict_with_uncertainty(
@@ -397,10 +444,8 @@ class Modeling:
         # IF falls into something outside range
         ood_multiplier = np.ones_like(mu)
         if ood_ref is not None:
-            ood_multiplier = self.ood_sigma_multiplier(
-                X, ood_ref, gamma=ood_gamma
-            )
-            sigma2_epist = (ood_multiplier ** 2) * sigma2_epist
+            ood_multiplier = self.ood_sigma_multiplier(X, ood_ref, gamma=ood_gamma)
+            sigma2_epist = (ood_multiplier**2) * sigma2_epist
 
         # Model B: aleatoric variance
         sigma2_aleat = self.predict_aleatoric_variance(
@@ -409,7 +454,7 @@ class Modeling:
 
         sigma2_total = sigma2_epist + sigma2_aleat
         sigma_total = recalibration_c * np.sqrt(sigma2_total)
-        sigma2_total = sigma_total ** 2
+        sigma2_total = sigma_total**2
 
         leader_pred = predictor_a.predict(X).values
 
@@ -430,9 +475,7 @@ class Modeling:
             trunc = self.truncated_gaussian_moments(
                 mu=mu, sigma=sigma_total, y_min=y_min, y_max=y_max
             )
-            out = pd.concat(
-                [out, trunc.set_index(out.index)], axis=1
-            )
+            out = pd.concat([out, trunc.set_index(out.index)], axis=1)
 
         return out
 
@@ -521,9 +564,7 @@ class Modeling:
         rows = []
         for a in alphas:
             cov = self.empirical_coverage(mu, sigma, y_true, a)
-            rows.append(
-                {"alpha": a, "empirical_coverage": cov, "gap": cov - a}
-            )
+            rows.append({"alpha": a, "empirical_coverage": cov, "gap": cov - a})
         return pd.DataFrame(rows)
 
     def fit_recalibration_scalar(
@@ -549,9 +590,7 @@ class Modeling:
                 - target_alpha
             ) ** 2
 
-        result = minimize_scalar(
-            loss, bounds=search_bounds, method="bounded"
-        )
+        result = minimize_scalar(loss, bounds=search_bounds, method="bounded")
         return float(result.x)
 
     # =========================================================
@@ -627,14 +666,8 @@ class Modeling:
         if lo >= hi:
             return np.zeros_like(mu)
 
-        z_mass = (
-            norm.cdf((y_max - mu) / sigma)
-            - norm.cdf((y_min - mu) / sigma)
-        )
-        raw = (
-            norm.cdf((hi - mu) / sigma)
-            - norm.cdf((lo - mu) / sigma)
-        )
+        z_mass = norm.cdf((y_max - mu) / sigma) - norm.cdf((y_min - mu) / sigma)
+        raw = norm.cdf((hi - mu) / sigma) - norm.cdf((lo - mu) / sigma)
         with np.errstate(divide="ignore", invalid="ignore"):
             out = np.where(z_mass > 0, raw / z_mass, 0.0)
         return out
@@ -661,16 +694,18 @@ class Modeling:
         a = (y_min - mu) / sigma
         b = (y_max - mu) / sigma
         return truncnorm.rvs(
-            a, b, loc=mu, scale=sigma,
-            size=(n_samples, mu.shape[0]), random_state=rng,
+            a,
+            b,
+            loc=mu,
+            scale=sigma,
+            size=(n_samples, mu.shape[0]),
+            random_state=rng,
         )
 
     # =========================================================
     # Out-of-domain handling — soft sigma inflation
     # =========================================================
-    def fit_ood_reference(
-        self, X_train: pd.DataFrame, features: list
-    ) -> dict:
+    def fit_ood_reference(self, X_train: pd.DataFrame, features: list) -> dict:
         """Fit a Mahalanobis reference on the training inputs.
 
         Store the returned dict in ``artifacts.pkl`` alongside weights
@@ -681,9 +716,7 @@ class Modeling:
         mean = X.mean(axis=0)
         cov = np.cov(X, rowvar=False)
         # Ridge for numerical stability with ~100 rows / few features.
-        cov += (
-            1e-6 * np.eye(cov.shape[0]) * np.trace(cov) / cov.shape[0]
-        )
+        cov += 1e-6 * np.eye(cov.shape[0]) * np.trace(cov) / cov.shape[0]
         cov_inv = np.linalg.inv(cov)
 
         d_train = self._mahalanobis(X, mean, cov_inv)
@@ -693,8 +726,7 @@ class Modeling:
             "cov_inv": cov_inv,
             "d_ref": float(np.quantile(d_train, 0.95)),
             "ranges": {
-                f: (float(X_train[f].min()), float(X_train[f].max()))
-                for f in features
+                f: (float(X_train[f].min()), float(X_train[f].max())) for f in features
             },
         }
 
@@ -734,6 +766,8 @@ class Modeling:
         if n_ood:
             logger.info(
                 "OOD inflation applied to %d/%d rows (max m=%.2f).",
-                n_ood, len(m), float(m.max()),
+                n_ood,
+                len(m),
+                float(m.max()),
             )
         return np.minimum(m, max_multiplier)
