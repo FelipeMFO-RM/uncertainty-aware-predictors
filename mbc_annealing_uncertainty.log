@@ -495,3 +495,21 @@
 2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Selections saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc.csv
 2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Full feasible grid saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc_full_grid.csv
 2026-07-21 17:09:37,841 | INFO | log_mbc_annealing_uncertainty | Pipeline finished successfully.
+2026-08-05 11:59:18,670 | INFO | log_mbc_annealing_uncertainty | Starting uncertainty-aware MBC annealing pipeline
+2026-08-05 11:59:18,670 | INFO | log_mbc_annealing_uncertainty | Loading config from config/config_script_annealing_uncertainty.yaml
+2026-08-05 11:59:18,715 | INFO | log_mbc_annealing_uncertainty | material={'purity': 99.7637, 'iacs': 96.84, 'initial_diameter': 2.0, 'tensile_strength': 349.58} | temp_range=[473, 873] | time_range=[30, 120] | min_setpoints={'iacs': 100, 'tensile_strength': 220.0} | delta=0.2
+2026-08-05 11:59:18,715 | INFO | log_mbc_annealing_uncertainty | Loading surrogate bundles
+2026-08-05 11:59:27,643 | INFO | src.modeling.MBCInference | Loaded surrogate 'iacs' (features=['purity', 'iacs', 'temperature', 'time']) from models\annealing_iacs\model0508
+2026-08-05 11:59:28,153 | INFO | src.modeling.MBCInference | Loaded surrogate 'tensile_strength' (features=['purity', 'initial_diameter', 'tensile_strength', 'temperature', 'time']) from models\annealing_uts\model0508
+2026-08-05 11:59:28,153 | INFO | log_mbc_annealing_uncertainty | Building parameter grid
+2026-08-05 11:59:28,169 | INFO | log_mbc_annealing_uncertainty | Grid: 41 temps x 19 times = 779 cells
+2026-08-05 11:59:28,169 | INFO | log_mbc_annealing_uncertainty | Predicting predictive distributions
+2026-08-05 11:59:40,601 | INFO | src.modeling.Modeling | OOD inflation applied to 342/779 rows (max m=1.93).
+2026-08-05 11:59:57,353 | INFO | log_mbc_annealing_uncertainty | Computing success probabilities (chance constraints)
+2026-08-05 11:59:57,358 | INFO | src.metrics.ProbabilisticEvaluation | Probabilistic setpoints (delta=0.20 -> Pr>=0.80): kept 65 / 779 cells.
+2026-08-05 11:59:57,358 | INFO | log_mbc_annealing_uncertainty | Feasible cells (Pr >= 0.80): 65
+2026-08-05 11:59:57,358 | INFO | log_mbc_annealing_uncertainty | Computing cost functions
+2026-08-05 11:59:57,361 | INFO | log_mbc_annealing_uncertainty | Selecting operating points
+2026-08-05 11:59:57,382 | INFO | log_mbc_annealing_uncertainty | Selections saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc.csv
+2026-08-05 11:59:57,385 | INFO | log_mbc_annealing_uncertainty | Full feasible grid saved to data\enriched\mbc_annealing_uncertainty_script_results\LT-10_2\mbc_ann_unc_full_grid.csv
+2026-08-05 11:59:57,385 | INFO | log_mbc_annealing_uncertainty | Pipeline finished successfully.

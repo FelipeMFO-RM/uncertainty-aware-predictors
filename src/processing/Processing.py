@@ -160,3 +160,61 @@ class Processing:
         df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
 
         return df, df_val
+
+    def process_annealing_iacs(
+        self, features: list[str],
+        target: str,
+        df_schema: pd.DataFrame,
+        df_val: pd.DataFrame = None,
+        threshold_initial: float = 95.0
+    ) -> Union[pd.DataFrame, pd.DataFrame]:
+        """Function to process data on annealing iacs
+
+        Args:
+            features (list[str]): List of feature column names
+            target (str): Name of the target column
+            df_schema (pd.DataFrame): downloaded raw schema data
+            df_val (pd.DataFrame, optional): Validation dataframe. Defaults to None.
+            threshold_initial (float, optional): Threshold for IACS values. Defaults to 95.0.
+
+        Returns:
+            Union[pd.DataFrame, pd.DataFrame]: df processed and df validation.
+        """
+        df = df_schema[features + [target]].dropna().reset_index(drop=True).copy()
+
+        if threshold_initial is not None:
+            df = df[df[target.split("_")[0]] > threshold_initial]
+
+        if df_val is not None:
+            df_val = df_val.copy()
+        else:
+            df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
+
+        return df, df_val
+
+    def process_annealing_uts(
+        self, features: list[str],
+        target: str,
+        df_schema: pd.DataFrame,
+        df_val: pd.DataFrame = None,
+    ) -> Union[pd.DataFrame, pd.DataFrame]:
+        """Function to process data on annealing uts
+
+        Args:
+            features (list[str]): List of feature column names
+            target (str): Name of the target column
+            df_schema (pd.DataFrame): downloaded raw schema data
+            df_val (pd.DataFrame, optional): Validation dataframe. Defaults to None.
+            threshold_initial (float, optional): Threshold for IACS values. Defaults to 95.0.
+
+        Returns:
+            Union[pd.DataFrame, pd.DataFrame]: df processed and df validation.
+        """
+        df = df_schema[features + [target]].dropna().reset_index(drop=True).copy()
+
+        if df_val is not None:
+            df_val = df_val.copy()
+        else:
+            df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
+
+        return df, df_val

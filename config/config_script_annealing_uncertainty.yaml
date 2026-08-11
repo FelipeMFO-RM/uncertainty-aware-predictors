@@ -6,8 +6,8 @@ output_path: data/enriched/mbc_annealing_uncertainty_script_results
 # notebooks, or any <run_dir> from ExperimentRunner. If you point at a TAG
 # folder (multiple runs inside), the script auto-picks the best run by RMSE.
 bundle_dirs:
-  iacs: models/annealing_iacs/experiments/annealing-v2-weight-3-best-quality
-  uts:  models/annealing_uts/experiments/annealing-uts-v1-best_quality
+  iacs: models/annealing_iacs/model0508
+  uts:  models/annealing_uts/model0508
 # Fixed material state: every non-grid feature the surrogates need.
 # IACS needs: purity, iacs        UTS needs: purity, initial_diameter, tensile_strength
 material_properties:
