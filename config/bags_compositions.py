@@ -355,7 +355,7 @@ echantillon_2N = {
     "Te": _e(0.0022, 0.00021, 9.5, False),
 }
 
-enchantillon_1 ={
+echantillon_1 ={
     "Zn" : _e(0.0010, 0.00000, 0.0, False),
     "Pb" : _e(0.354, 0.00000, 0.0, False),
     "Sn" : _e(0.0051, 0.00000, 0.0, False),
@@ -384,7 +384,7 @@ enchantillon_1 ={
     "Te" : _e(0.0021, 0, 0, False),
 }
 
-enchantillon_2 = {
+echantillon_2 = {
     "Zn": _e(0.0153, 0, 0, False),
     "Pb": _e(0.348, 0, 0, False),
     "Sn": _e(0.0016, 0, 0, False),
@@ -413,7 +413,7 @@ enchantillon_2 = {
     "Te": _e(0.0014, 0, 0, False),
 }
 
-enchantillon_3 = {
+echantillon_3 = {
     "Zn" : _e(0.0029, 0, 0, False),
     "Pb" : _e(0.350, 0, 0, False),
     "Sn" : _e(0.0213, 0, 0, False),
@@ -442,7 +442,7 @@ enchantillon_3 = {
     "Te" : _e(0.0014, 0, 0, False),
 }
 
-enchantillon_4 = {
+echantillon_4 = {
     "Zn" : _e(0.0038, 0, 0, False),
     "Pb" : _e(0.265, 0, 0, False),
     "Sn" : _e(0.0197, 0, 0, False),
@@ -604,24 +604,24 @@ sample_C14500 = {
 
 
 ALL_SAMPLES: dict[str, dict] = {
-    "1A sac1": sac_1A_sac1,
-    "1A sac2": sac_1A_sac2,
-    "1B sac1": sac_1B_sac1,
-    "1B sac2": sac_1B_sac2,
-    "1B sac3": sac_1B_sac3,
-    "1B sac4": sac_1B_sac4,
-    "1B sac5": sac_1B_sac5,
-    "1B sac6": sac_1B_sac6,
-    "2N sample": echantillon_2N,
-    "2N sac1": sac_2N_sac1,
-    "2N sac2": sac_2N_sac2,
-    "enchantillon_1": enchantillon_1,
-    "enchantillon_2": enchantillon_2,
-    "enchantillon_3": enchantillon_3,
-    "enchantillon_4": enchantillon_4,
+    "1A_sac1": sac_1A_sac1,
+    "1A_sac2": sac_1A_sac2,
+    "1B_sac1": sac_1B_sac1,
+    "1B_sac2": sac_1B_sac2,
+    "1B_sac3": sac_1B_sac3,
+    "1B_sac4": sac_1B_sac4,
+    "1B_sac5": sac_1B_sac5,
+    "1B_sac6": sac_1B_sac6,
+    "2N_sac1": sac_2N_sac1,
+    "2N_sac2": sac_2N_sac2,
+    "echantillon_2N": echantillon_2N,
+    "echantillon_1": echantillon_1,
+    "echantillon_2": echantillon_2,
+    "echantillon_3": echantillon_3,
+    "echantillon_4": echantillon_4,
     "Cu-T2": sample_Cu_T2,
     "Cu-Chine": sample_Cu_Chine,
-    "CGR-ETP": sample_CGR_ETP,
-    "Cu-ETP-LT4": sample_Cu_ETP_LT4,
+    "Cu-ETP": sample_CGR_ETP,
+    "Cu-ETP": sample_Cu_ETP_LT4,
     "C14500": sample_C14500,
 }

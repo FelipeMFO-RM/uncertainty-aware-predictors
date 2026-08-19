@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from ..processing.CompositionUtils import build_sample_dataframes
+from ..composition_utils import build_sample_dataframes
 
 
 class GBEIHelper:
@@ -80,6 +80,28 @@ class GBEIHelper:
             gbei += row["concentration (wt%)"] * enrichment_factor
 
         return {"GBEI": gbei}
+
+    # --------------------------------------------------------------
+    # Single-composition convenience
+    # --------------------------------------------------------------
+
+    def compute_single(
+        self,
+        composition: dict,
+        sample_name: str = "sample",
+    ) -> dict:
+        """
+        Run the full calculation for one composition dict (the same
+        shape as an entry of ALL_SAMPLES) and return the result row as
+        a plain dict, without going through a DataFrame of samples.
+        """
+
+        dfs = build_sample_dataframes(
+            {sample_name: composition},
+            below_limit_factor=self.below_limit_factor,
+        )
+
+        return self.calculate_sample(dfs[sample_name])
 
     # --------------------------------------------------------------
     # Orchestrator

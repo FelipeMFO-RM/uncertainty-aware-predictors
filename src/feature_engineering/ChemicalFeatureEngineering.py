@@ -1,0 +1,553 @@
+"""
+ChemicalFeatureEngineering — attach IRI and GBEI features to a dataset whose
+rows carry a `material_reference`.
+
+A material_reference is resolved in one of two ways:
+
+  1. Direct hit in ALL_SAMPLES ("Cu-T2", "C14500", "CGR-ETP", ...).
+     The composition is already measured; it is used as-is.
+
+  2. Serial number ("SN020", ...). The composition is not measured
+     directly — it is a blend of bags. The blend recipe lives in a
+     wide table (one row per SN, one column per bag, cells = mass
+     fraction of that bag), and the composition is reconstructed as a
+     weighted average of the bag compositions.
+
+Resolution is by lookup, not by prefix: ALL_SAMPLES is checked first,
+then the SN table. A reference that is a direct sample never depends on
+its name starting with "SN" or not, so renaming a bag cannot silently
+reroute it.
+
+Typical use:
+
+    from feature_engineering import ChemicalFeatureEngineering
+    import composition, resistivity_index, enrichment_index
+
+    fe = ChemicalFeatureEngineering(
+        all_samples=composition.ALL_SAMPLES,
+        resistivity_factors=resistivity_index.RESISTIVITY_FACTORS,
+        enrichment_factors=enrichment_index.Enrichment_FACTORS,
+    )
+
+    sn_df = pd.read_csv("serial_number_coefficients.csv")
+
+    df = fe.add_features(df, sn_df)          # adds IRI and GBEI columns
+"""
+
+from __future__ import annotations
+
+import math
+import warnings
+from typing import Optional
+
+import pandas as pd
+
+from ..composition_utils import _calculate_new_composition
+from .IRIHelper import IRIHelper
+from .GBEIHelper import GBEIHelper
+
+
+class ChemicalFeatureEngineering:
+    """
+    Resolves material references to compositions, then computes IRI and
+    GBEI per row.
+
+    Compositions are resolved once per unique reference and cached, so
+    a dataset with 50k rows over 40 distinct references does 40 mixes,
+    not 50k.
+    """
+
+    def __init__(
+        self,
+        all_samples: dict[str, dict],
+        resistivity_factors: Optional[dict] = None,
+        enrichment_factors: Optional[dict] = None,
+        iri_helper: Optional[IRIHelper] = None,
+        gbei_helper: Optional[GBEIHelper] = None,
+        use_below_limit: bool = False,
+        normalize_weights: bool = True,
+        normalize_composition: bool = True,
+        weight_tolerance: float = 1e-6,
+        id_column: str = "ID",
+    ) -> None:
+        """
+        Parameters
+        ----------
+        all_samples
+            The ALL_SAMPLES mapping: sample_name -> composition dict.
+        resistivity_factors, enrichment_factors
+            Factor dicts used to build the default helpers. Ignored if
+            the corresponding helper instance is passed explicitly.
+        iri_helper, gbei_helper
+            Pre-configured helper instances. Pass these when you need
+            non-default thresholds, densities or below_limit_factor.
+        use_below_limit
+            Passed to _calculate_new_composition when blending: whether
+            below-detection-limit values contribute their limit (True)
+            or zero (False) to the mixture.
+        normalize_weights
+            If True, bag weights for an SN that do not sum to 1.0 are
+            rescaled so they do. If False, such rows raise.
+        normalize_composition
+            Passed to _calculate_new_composition: rescale the blended
+            composition so element values sum to 100 wt%.
+        weight_tolerance
+            Absolute tolerance for the "weights sum to 1.0" check.
+        id_column
+            Name of the SN identifier column in the blend table.
+        """
+
+        self.all_samples = all_samples
+
+        if iri_helper is None:
+            if resistivity_factors is None:
+                raise ValueError(
+                    "Provide either `iri_helper` or `resistivity_factors`."
+                )
+            iri_helper = IRIHelper(resistivity_factors)
+
+        if gbei_helper is None:
+            if enrichment_factors is None:
+                raise ValueError(
+                    "Provide either `gbei_helper` or `enrichment_factors`."
+                )
+            gbei_helper = GBEIHelper(enrichment_factors)
+
+        self.iri_helper = iri_helper
+        self.gbei_helper = gbei_helper
+
+        self.use_below_limit = use_below_limit
+        self.normalize_weights = normalize_weights
+        self.normalize_composition = normalize_composition
+        self.weight_tolerance = weight_tolerance
+        self.id_column = id_column
+
+        # reference -> composition dict
+        self._composition_cache: dict[str, dict] = {}
+
+        # references that could not be resolved, and why
+        self.unresolved: dict[str, str] = {}
+
+    # ==============================================================
+    # 1. Blend table -> recipes
+    # ==============================================================
+
+    def parse_blend_table(
+        self,
+        sn_df: pd.DataFrame,
+    ) -> dict[str, list[tuple[float, str]]]:
+        """
+        Convert the wide SN blend table into
+        {sn_id: [(weight, bag_name), ...]}, dropping zero and missing
+        weights.
+
+        The table is expected to have one identifier column (self.
+        id_column) and one numeric column per bag. Cell values are mass
+        fractions.
+        """
+
+        if self.id_column not in sn_df.columns:
+            raise KeyError(
+                f"Blend table has no {self.id_column!r} column. "
+                f"Columns found: {list(sn_df.columns)}"
+            )
+
+        bag_columns = [c for c in sn_df.columns if c != self.id_column]
+
+        recipes: dict[str, list[tuple[float, str]]] = {}
+
+        for _, row in sn_df.iterrows():
+
+            sn_id = str(row[self.id_column]).strip()
+
+            if not sn_id or sn_id.lower() == "nan":
+                continue
+
+            pairs: list[tuple[float, str]] = []
+
+            for bag in bag_columns:
+
+                weight = pd.to_numeric(row[bag], errors="coerce")
+
+                if pd.isna(weight) or weight == 0:
+                    continue
+
+                pairs.append((float(weight), str(bag).strip()))
+
+            recipes[sn_id] = pairs
+
+        return recipes
+
+    # ==============================================================
+    # 2. Recipe -> composition
+    # ==============================================================
+
+    def _prepare_weights(
+        self,
+        sn_id: str,
+        pairs: list[tuple[float, str]],
+    ) -> list[tuple[float, dict]]:
+        """
+        Validate bag names, handle weights that do not sum to 1.0, and
+        swap bag names for their composition dicts.
+        """
+
+        if not pairs:
+            raise ValueError(
+                f"{sn_id!r} has no non-zero bag weights."
+            )
+
+        missing = [
+            bag for _, bag in pairs
+            if bag not in self.all_samples
+        ]
+
+        if missing:
+            raise KeyError(
+                f"{sn_id!r} references bags absent from ALL_SAMPLES: "
+                f"{missing}"
+            )
+
+        total = sum(weight for weight, _ in pairs)
+
+        if not math.isclose(total, 1.0, abs_tol=self.weight_tolerance):
+
+            if not self.normalize_weights:
+                raise ValueError(
+                    f"{sn_id!r} bag weights sum to {total!r}, not 1.0. "
+                    f"Set normalize_weights=True to rescale them."
+                )
+
+            if total <= 0:
+                raise ValueError(
+                    f"{sn_id!r} bag weights sum to {total!r}; cannot "
+                    f"rescale."
+                )
+
+            pairs = [(weight / total, bag) for weight, bag in pairs]
+
+        return [
+            (weight, self.all_samples[bag])
+            for weight, bag in pairs
+        ]
+
+    def resolve_composition(
+        self,
+        reference: str,
+        recipes: dict[str, list[tuple[float, str]]],
+    ) -> Optional[dict]:
+        """
+        Resolve one material_reference to a composition dict.
+
+        Returns None (and records the reason in self.unresolved) when
+        the reference is neither a known sample nor a valid SN recipe.
+        """
+
+        reference = str(reference).strip()
+
+        if reference in self._composition_cache:
+            return self._composition_cache[reference]
+
+        # ---- 1. direct sample ------------------------------------
+        if reference in self.all_samples:
+            composition = self.all_samples[reference]
+            self._composition_cache[reference] = composition
+            return composition
+
+        # ---- 2. serial number blend ------------------------------
+        if reference in recipes:
+
+            try:
+                weighted = self._prepare_weights(
+                    reference,
+                    recipes[reference],
+                )
+
+                composition = _calculate_new_composition(
+                    weighted,
+                    use_below_limit=self.use_below_limit,
+                    normalize=self.normalize_composition,
+                )
+
+            except (ValueError, KeyError) as exc:
+                self.unresolved[reference] = str(exc)
+                return None
+
+            self._composition_cache[reference] = composition
+            return composition
+
+        # ---- 3. unknown ------------------------------------------
+        self.unresolved[reference] = (
+            "not found in ALL_SAMPLES nor in the blend table"
+        )
+        return None
+
+    def build_composition_map(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+    ) -> dict[str, Optional[dict]]:
+        """
+        Resolve every distinct material_reference in `df` to a
+        composition dict. Unresolved references map to None.
+        """
+
+        if reference_column not in df.columns:
+            raise KeyError(
+                f"Dataset has no {reference_column!r} column."
+            )
+
+        recipes = self.parse_blend_table(sn_df)
+
+        references = (
+            df[reference_column]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+        )
+
+        return {
+            reference: self.resolve_composition(reference, recipes)
+            for reference in references
+        }
+
+    # ==============================================================
+    # 3. Feature getters
+    # ==============================================================
+
+    def _feature_series(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        value_fn,
+        reference_column: str,
+    ) -> pd.Series:
+        """
+        Shared plumbing: resolve compositions once per unique
+        reference, apply `value_fn(composition)`, map back onto the
+        dataset index.
+        """
+
+        composition_map = self.build_composition_map(
+            df, sn_df, reference_column
+        )
+
+        value_by_reference = {
+            reference: (
+                value_fn(composition)
+                if composition is not None
+                else float("nan")
+            )
+            for reference, composition in composition_map.items()
+        }
+
+        self._warn_unresolved()
+
+        return (
+            df[reference_column]
+            .astype(str)
+            .str.strip()
+            .map(value_by_reference)
+        )
+
+    def get_IRI(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+        value_key: str = "IRI (nΩ·m)",
+    ) -> pd.Series:
+        """
+        Return an IRI Series aligned to `df`'s index.
+
+        Parameters
+        ----------
+        value_key
+            Which field of the IRIHelper result row to return. Defaults
+            to the bare index; pass "ρ_total (nΩ·m)" for the full
+            effective resistivity including the Pb/Te second-phase
+            term, which is usually the physically meaningful one for
+            downstream modelling.
+        """
+
+        def value_fn(composition: dict) -> float:
+            result = self.iri_helper.compute_single(composition)
+            return result[value_key]
+
+        return self._feature_series(
+            df, sn_df, value_fn, reference_column
+        )
+
+    def get_GBEI(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+    ) -> pd.Series:
+        """
+        Return a GBEI Series aligned to `df`'s index.
+        """
+
+        def value_fn(composition: dict) -> float:
+            return self.gbei_helper.compute_single(composition)["GBEI"]
+
+        return self._feature_series(
+            df, sn_df, value_fn, reference_column
+        )
+
+    def get_IRI_details(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+    ) -> pd.DataFrame:
+        """
+        Return the full IRIHelper result — regime, volume fractions,
+        every rho — as a DataFrame aligned to `df`'s index. Useful for
+        auditing which samples took the Maxwell-Garnett path.
+        """
+
+        composition_map = self.build_composition_map(
+            df, sn_df, reference_column
+        )
+
+        rows_by_reference = {
+            reference: (
+                self.iri_helper.compute_single(composition)
+                if composition is not None
+                else {}
+            )
+            for reference, composition in composition_map.items()
+        }
+
+        self._warn_unresolved()
+
+        details = (
+            df[reference_column]
+            .astype(str)
+            .str.strip()
+            .map(rows_by_reference)
+        )
+
+        return pd.DataFrame(
+            list(details.values),
+            index=df.index,
+        )
+
+    # ==============================================================
+    # 4. One-shot
+    # ==============================================================
+
+    def add_features(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+        iri_column: str = "IRI",
+        gbei_column: str = "GBEI",
+        iri_value_key: str = "IRI (nΩ·m)",
+        inplace: bool = False,
+    ) -> pd.DataFrame:
+        """
+        Add both IRI and GBEI columns to the dataset.
+
+        Returns a copy by default; pass inplace=True to mutate `df`.
+        """
+
+        target = df if inplace else df.copy()
+
+        target[iri_column] = self.get_IRI(
+            df, sn_df, reference_column, value_key=iri_value_key
+        )
+        target[gbei_column] = self.get_GBEI(
+            df, sn_df, reference_column
+        )
+
+        return target
+
+    # ==============================================================
+    # 5. Diagnostics
+    # ==============================================================
+
+    def _warn_unresolved(self) -> None:
+        """Surface unresolved references once, as a warning."""
+
+        if not self.unresolved:
+            return
+
+        preview = list(self.unresolved.items())[:5]
+        detail = "; ".join(f"{ref}: {why}" for ref, why in preview)
+        more = (
+            f" (+{len(self.unresolved) - 5} more)"
+            if len(self.unresolved) > 5
+            else ""
+        )
+
+        warnings.warn(
+            f"{len(self.unresolved)} material_reference value(s) could "
+            f"not be resolved and produced NaN — {detail}{more}",
+            stacklevel=3,
+        )
+
+    def resolution_report(
+        self,
+        df: pd.DataFrame,
+        sn_df: pd.DataFrame,
+        reference_column: str = "material_reference",
+    ) -> pd.DataFrame:
+        """
+        One row per distinct material_reference showing how it was
+        resolved, how many dataset rows use it, and — for blends — the
+        recipe that was applied after any weight renormalization.
+
+        Run this before trusting the features. It is the fastest way to
+        catch a typo'd reference or a blend whose weights did not sum
+        to 1.
+        """
+
+        recipes = self.parse_blend_table(sn_df)
+
+        counts = (
+            df[reference_column]
+            .astype(str)
+            .str.strip()
+            .value_counts()
+        )
+
+        rows = []
+
+        for reference, n_rows in counts.items():
+
+            if reference in self.all_samples:
+                source = "direct sample"
+                recipe = ""
+                weight_sum = float("nan")
+
+            elif reference in recipes:
+                source = "blend"
+                pairs = recipes[reference]
+                weight_sum = sum(w for w, _ in pairs)
+                recipe = ", ".join(
+                    f"{bag}={w:g}" for w, bag in pairs
+                )
+
+            else:
+                source = "UNRESOLVED"
+                recipe = ""
+                weight_sum = float("nan")
+
+            composition = self.resolve_composition(reference, recipes)
+
+            rows.append({
+                "material_reference": reference,
+                "n_rows": n_rows,
+                "source": source,
+                "resolved": composition is not None,
+                "raw weight sum": weight_sum,
+                "recipe": recipe,
+                "problem": self.unresolved.get(reference, ""),
+            })
+
+        return pd.DataFrame(rows).set_index("material_reference")
