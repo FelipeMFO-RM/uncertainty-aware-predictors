@@ -166,7 +166,7 @@ class Processing:
         target: str,
         df_schema: pd.DataFrame,
         df_val: pd.DataFrame = None,
-        threshold_initial: float = 95.0
+        threshold_initial: float = 85.0
     ) -> Union[pd.DataFrame, pd.DataFrame]:
         """Function to process data on annealing iacs
 
