@@ -9,21 +9,6 @@ Each element maps to a dict with:
 
 from __future__ import annotations
 
-
-# ------------------------------------------------------------------
-# Helper
-# ------------------------------------------------------------------
-
-
-def _r(
-    coefficient: float,
-) -> dict:
-    """Build a single element resistivity coefficient dict."""
-    return {
-        "coefficient": coefficient
-    }
-
-
 # ------------------------------------------------------------------
 # Resistivity coefficients [nΩ·m per wt%]
 # Reference: Conductivity and resistivity values for copper alloys

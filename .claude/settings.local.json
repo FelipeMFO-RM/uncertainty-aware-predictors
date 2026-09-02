@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python -c ':*)",
-      "Bash(python scripts/_add_error_cells.py)"
+      "Bash(python scripts/_add_error_cells.py)",
+      "Bash(python _tmp_insert_cell.py)",
+      "Bash(python -c ' *)"
     ]
   }
 }

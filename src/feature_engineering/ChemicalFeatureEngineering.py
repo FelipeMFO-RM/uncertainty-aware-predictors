@@ -9,7 +9,7 @@ A material_reference is resolved in one of two ways:
 
   2. Serial number ("SN020", ...). The composition is not measured
      directly — it is a blend of bags. The blend recipe lives in a
-     wide table (one row per SN, one column per bag, cells = mass
+     csv to be loaded (df_sn one row per SN, one column per bag, cells = mass
      fraction of that bag), and the composition is reconstructed as a
      weighted average of the bag compositions.
 
@@ -20,18 +20,19 @@ reroute it.
 
 Typical use:
 
-    from feature_engineering import ChemicalFeatureEngineering
-    import composition, resistivity_index, enrichment_index
+    from ChemicalFeatureEngineering import ChemicalFeatureEngineering
+    from elements_coefficients import RESISTIVITY_FACTORS, ENRICHMENT_FACTORS
+    from bags_compositions import ALL_SAMPLES
 
-    fe = ChemicalFeatureEngineering(
-        all_samples=composition.ALL_SAMPLES,
-        resistivity_factors=resistivity_index.RESISTIVITY_FACTORS,
-        enrichment_factors=enrichment_index.Enrichment_FACTORS,
+    chfe = ChemicalFeatureEngineering(
+        all_samples=ALL_SAMPLES,
+        resistivity_factors=RESISTIVITY_FACTORS,
+        enrichment_factors=ENRICHMENT_FACTORS,
     )
 
-    sn_df = pd.read_csv("serial_number_coefficients.csv")
+    df_sn = pd.read_csv("serial_number_coefficients.csv")
 
-    df = fe.add_features(df, sn_df)          # adds IRI and GBEI columns
+    df = chfe.add_features(df, df_sn)          # adds IRI and GBEI columns
 """
 
 from __future__ import annotations
@@ -317,39 +318,54 @@ class ChemicalFeatureEngineering:
     # 3. Feature getters
     # ==============================================================
 
-    def _feature_series(
+    def _build_composition_frame(
         self,
         df: pd.DataFrame,
         sn_df: pd.DataFrame,
-        value_fn,
-        reference_column: str,
-    ) -> pd.Series:
+        reference_column: str = "material_reference",
+    ) -> pd.DataFrame:
         """
-        Shared plumbing: resolve compositions once per unique
-        reference, apply `value_fn(composition)`, map back onto the
-        dataset index.
+        Resolve every row's material_reference to a composition dict,
+        once, and return a one-column DataFrame ("_composition")
+        aligned to `df`'s index.
+
+        Every feature getter below is built on top of this frame, so
+        the blend table is parsed and each reference resolved exactly
+        once per call — including when IRI and GBEI are both derived
+        from the same `add_features` call.
         """
 
         composition_map = self.build_composition_map(
             df, sn_df, reference_column
         )
 
-        value_by_reference = {
-            reference: (
-                value_fn(composition)
-                if composition is not None
-                else float("nan")
-            )
-            for reference, composition in composition_map.items()
-        }
-
         self._warn_unresolved()
 
-        return (
+        compositions = (
             df[reference_column]
             .astype(str)
             .str.strip()
-            .map(value_by_reference)
+            .map(composition_map)
+        )
+
+        return pd.DataFrame({"_composition": compositions}, index=df.index)
+
+    def _feature_series(
+        self,
+        composition_frame: pd.DataFrame,
+        value_fn,
+        default=float("nan"),
+    ) -> pd.Series:
+        """
+        Shared plumbing: apply `value_fn(composition)` over a frame
+        already produced by `_build_composition_frame`, falling back
+        to `default` for rows whose reference never resolved.
+        """
+
+        return composition_frame["_composition"].map(
+            lambda composition: (
+                value_fn(composition) if composition is not None else default
+            )
         )
 
     def get_IRI(
@@ -372,12 +388,13 @@ class ChemicalFeatureEngineering:
             downstream modelling.
         """
 
-        def value_fn(composition: dict) -> float:
-            result = self.iri_helper.compute_single(composition)
-            return result[value_key]
+        composition_frame = self._build_composition_frame(
+            df, sn_df, reference_column
+        )
 
         return self._feature_series(
-            df, sn_df, value_fn, reference_column
+            composition_frame,
+            lambda composition: self.iri_helper.compute_single(composition)[value_key],
         )
 
     def get_GBEI(
@@ -390,11 +407,13 @@ class ChemicalFeatureEngineering:
         Return a GBEI Series aligned to `df`'s index.
         """
 
-        def value_fn(composition: dict) -> float:
-            return self.gbei_helper.compute_single(composition)["GBEI"]
+        composition_frame = self._build_composition_frame(
+            df, sn_df, reference_column
+        )
 
         return self._feature_series(
-            df, sn_df, value_fn, reference_column
+            composition_frame,
+            lambda composition: self.gbei_helper.compute_single(composition)["GBEI"],
         )
 
     def get_IRI_details(
@@ -409,26 +428,14 @@ class ChemicalFeatureEngineering:
         auditing which samples took the Maxwell-Garnett path.
         """
 
-        composition_map = self.build_composition_map(
+        composition_frame = self._build_composition_frame(
             df, sn_df, reference_column
         )
 
-        rows_by_reference = {
-            reference: (
-                self.iri_helper.compute_single(composition)
-                if composition is not None
-                else {}
-            )
-            for reference, composition in composition_map.items()
-        }
-
-        self._warn_unresolved()
-
-        details = (
-            df[reference_column]
-            .astype(str)
-            .str.strip()
-            .map(rows_by_reference)
+        details = self._feature_series(
+            composition_frame,
+            self.iri_helper.compute_single,
+            default={},
         )
 
         return pd.DataFrame(
@@ -453,16 +460,27 @@ class ChemicalFeatureEngineering:
         """
         Add both IRI and GBEI columns to the dataset.
 
+        Builds the reference -> composition frame once and derives
+        both features from it, rather than calling get_IRI() and
+        get_GBEI() independently (which would each resolve
+        compositions, and warn about unresolved ones, on their own).
+
         Returns a copy by default; pass inplace=True to mutate `df`.
         """
 
+        composition_frame = self._build_composition_frame(
+            df, sn_df, reference_column
+        )
+
         target = df if inplace else df.copy()
 
-        target[iri_column] = self.get_IRI(
-            df, sn_df, reference_column, value_key=iri_value_key
+        target[iri_column] = self._feature_series(
+            composition_frame,
+            lambda composition: self.iri_helper.compute_single(composition)[iri_value_key],
         )
-        target[gbei_column] = self.get_GBEI(
-            df, sn_df, reference_column
+        target[gbei_column] = self._feature_series(
+            composition_frame,
+            lambda composition: self.gbei_helper.compute_single(composition)["GBEI"],
         )
 
         return target
