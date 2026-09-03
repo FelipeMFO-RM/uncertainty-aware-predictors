@@ -26,13 +26,12 @@ Typical use:
 
     chfe = ChemicalFeatureEngineering(
         all_samples=ALL_SAMPLES,
+        df_sn=pd.read_csv("serial_number_coefficients.csv"),
         resistivity_factors=RESISTIVITY_FACTORS,
         enrichment_factors=ENRICHMENT_FACTORS,
     )
 
-    df_sn = pd.read_csv("serial_number_coefficients.csv")
-
-    df = chfe.add_features(df, df_sn)          # adds IRI and GBEI columns
+    df = chfe.add_features(df)                 # adds IRI and GBEI columns
 """
 
 from __future__ import annotations
@@ -61,10 +60,9 @@ class ChemicalFeatureEngineering:
     def __init__(
         self,
         all_samples: dict[str, dict],
-        resistivity_factors: Optional[dict] = None,
-        enrichment_factors: Optional[dict] = None,
-        iri_helper: Optional[IRIHelper] = None,
-        gbei_helper: Optional[GBEIHelper] = None,
+        df_sn: pd.DataFrame,
+        resistivity_factors: dict,
+        enrichment_factors: dict,
         use_below_limit: bool = False,
         normalize_weights: bool = True,
         normalize_composition: bool = True,
@@ -76,6 +74,7 @@ class ChemicalFeatureEngineering:
         ----------
         all_samples
             The ALL_SAMPLES mapping: sample_name -> composition dict.
+            Sample name can be a bag name or a direct material_reference.
         resistivity_factors, enrichment_factors
             Factor dicts used to build the default helpers. Ignored if
             the corresponding helper instance is passed explicitly.
@@ -96,32 +95,26 @@ class ChemicalFeatureEngineering:
             Absolute tolerance for the "weights sum to 1.0" check.
         id_column
             Name of the SN identifier column in the blend table.
+        df_sn
+            The SN blend table (schema), parsed into recipes once here
+            so that lookups by serial number alone — see
+            `get_IRI_GBEI_by_sn` — don't need it passed in again.
         """
 
         self.all_samples = all_samples
 
-        if iri_helper is None:
-            if resistivity_factors is None:
-                raise ValueError(
-                    "Provide either `iri_helper` or `resistivity_factors`."
-                )
-            iri_helper = IRIHelper(resistivity_factors)
-
-        if gbei_helper is None:
-            if enrichment_factors is None:
-                raise ValueError(
-                    "Provide either `gbei_helper` or `enrichment_factors`."
-                )
-            gbei_helper = GBEIHelper(enrichment_factors)
-
-        self.iri_helper = iri_helper
-        self.gbei_helper = gbei_helper
+        self.iri_helper = IRIHelper(resistivity_factors)
+        self.gbei_helper = GBEIHelper(enrichment_factors)
+        self.df_sn = df_sn
+        self.id_column = id_column
+        self._sn_recipes = (
+            self.parse_blend_table() if df_sn is not None else {}
+        )
 
         self.use_below_limit = use_below_limit
         self.normalize_weights = normalize_weights
         self.normalize_composition = normalize_composition
         self.weight_tolerance = weight_tolerance
-        self.id_column = id_column
 
         # reference -> composition dict
         self._composition_cache: dict[str, dict] = {}
@@ -129,13 +122,16 @@ class ChemicalFeatureEngineering:
         # references that could not be resolved, and why
         self.unresolved: dict[str, str] = {}
 
+        # SN blend table, parsed into recipes once so per-SN lookups
+        # (get_IRI_GBEI_by_sn) don't need it passed in every call.
+
+
     # ==============================================================
     # 1. Blend table -> recipes
     # ==============================================================
 
     def parse_blend_table(
         self,
-        sn_df: pd.DataFrame,
     ) -> dict[str, list[tuple[float, str]]]:
         """
         Convert the wide SN blend table into
@@ -147,17 +143,17 @@ class ChemicalFeatureEngineering:
         fractions.
         """
 
-        if self.id_column not in sn_df.columns:
+        if self.id_column not in self.df_sn.columns:
             raise KeyError(
                 f"Blend table has no {self.id_column!r} column. "
-                f"Columns found: {list(sn_df.columns)}"
+                f"Columns found: {list(self.df_sn.columns)}"
             )
 
-        bag_columns = [c for c in sn_df.columns if c != self.id_column]
+        bag_columns = [c for c in self.df_sn.columns if c != self.id_column]
 
         recipes: dict[str, list[tuple[float, str]]] = {}
 
-        for _, row in sn_df.iterrows():
+        for _, row in self.df_sn.iterrows():
 
             sn_id = str(row[self.id_column]).strip()
 
@@ -286,7 +282,6 @@ class ChemicalFeatureEngineering:
     def build_composition_map(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
     ) -> dict[str, Optional[dict]]:
         """
@@ -299,7 +294,7 @@ class ChemicalFeatureEngineering:
                 f"Dataset has no {reference_column!r} column."
             )
 
-        recipes = self.parse_blend_table(sn_df)
+        recipes = self.parse_blend_table()
 
         references = (
             df[reference_column]
@@ -321,7 +316,6 @@ class ChemicalFeatureEngineering:
     def _build_composition_frame(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
     ) -> pd.DataFrame:
         """
@@ -336,7 +330,7 @@ class ChemicalFeatureEngineering:
         """
 
         composition_map = self.build_composition_map(
-            df, sn_df, reference_column
+            df, reference_column
         )
 
         self._warn_unresolved()
@@ -371,7 +365,6 @@ class ChemicalFeatureEngineering:
     def get_IRI(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
         value_key: str = "IRI (nΩ·m)",
     ) -> pd.Series:
@@ -389,7 +382,7 @@ class ChemicalFeatureEngineering:
         """
 
         composition_frame = self._build_composition_frame(
-            df, sn_df, reference_column
+            df, reference_column
         )
 
         return self._feature_series(
@@ -400,7 +393,6 @@ class ChemicalFeatureEngineering:
     def get_GBEI(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
     ) -> pd.Series:
         """
@@ -408,7 +400,7 @@ class ChemicalFeatureEngineering:
         """
 
         composition_frame = self._build_composition_frame(
-            df, sn_df, reference_column
+            df, reference_column
         )
 
         return self._feature_series(
@@ -419,7 +411,6 @@ class ChemicalFeatureEngineering:
     def get_IRI_details(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
     ) -> pd.DataFrame:
         """
@@ -429,7 +420,7 @@ class ChemicalFeatureEngineering:
         """
 
         composition_frame = self._build_composition_frame(
-            df, sn_df, reference_column
+            df, reference_column
         )
 
         details = self._feature_series(
@@ -443,6 +434,40 @@ class ChemicalFeatureEngineering:
             index=df.index,
         )
 
+    def get_IRI_GBEI_by_sn(
+        self,
+        serial_number: str,
+        iri_value_key: str = "IRI (nΩ·m)",
+    ) -> dict:
+        """
+        Return {"IRI": ..., "GBEI": ...} for a single serial number
+        (or any direct sample reference), resolved against the SN
+        blend table given as `df_sn` at construction time.
+
+        Unlike get_IRI/get_GBEI, no `df`/`df_sn` arguments are needed
+        here — the recipes were already parsed in __init__.
+        """
+
+        if self.df_sn is None:
+            raise ValueError(
+                "No SN blend table configured. Pass `df_sn` when "
+                "constructing ChemicalFeatureEngineering to use "
+                "get_IRI_GBEI_by_sn."
+            )
+
+        composition = self.resolve_composition(
+            str(serial_number).strip(), self._sn_recipes
+        )
+
+        if composition is None:
+            self._warn_unresolved()
+            return {"IRI": float("nan"), "GBEI": float("nan")}
+
+        return {
+            "IRI": self.iri_helper.compute_single(composition)[iri_value_key],
+            "GBEI": self.gbei_helper.compute_single(composition)["GBEI"],
+        }
+
     # ==============================================================
     # 4. One-shot
     # ==============================================================
@@ -450,7 +475,6 @@ class ChemicalFeatureEngineering:
     def add_features(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
         iri_column: str = "IRI",
         gbei_column: str = "GBEI",
@@ -469,7 +493,7 @@ class ChemicalFeatureEngineering:
         """
 
         composition_frame = self._build_composition_frame(
-            df, sn_df, reference_column
+            df, reference_column
         )
 
         target = df if inplace else df.copy()
@@ -512,7 +536,6 @@ class ChemicalFeatureEngineering:
     def resolution_report(
         self,
         df: pd.DataFrame,
-        sn_df: pd.DataFrame,
         reference_column: str = "material_reference",
     ) -> pd.DataFrame:
         """
@@ -525,7 +548,7 @@ class ChemicalFeatureEngineering:
         to 1.
         """
 
-        recipes = self.parse_blend_table(sn_df)
+        recipes = self.parse_blend_table()
 
         counts = (
             df[reference_column]
