@@ -211,18 +211,92 @@ class ProbabilisticEvaluation:
         df: pd.DataFrame,
         short_name: str,
         kappa: float = 1.645,
+        bound: str = "lower",
     ) -> pd.DataFrame:
-        """Lower confidence bound ``mu - kappa*sigma`` for a target.
+        """One-sided confidence bound on a target, for risk-aware ranking.
 
-        ``kappa = 1.645`` corresponds to a one-sided 95% LCB. Ranking by
+        ``kappa = 1.645`` corresponds to a one-sided 95% bound. Ranking on
         this column instead of ``mu`` makes the controller prefer cells
         whose guarantee is robust to uncertainty (between two equal means,
         the tighter sigma wins). Purely a ranking aid; does not gate cells.
+
+        Parameters
+        ----------
+        bound : {"lower", "upper"}
+            ``"lower"`` writes ``{s}_lcb = mu - kappa*sigma`` — the
+            pessimistic value for a target constrained from BELOW (a
+            ``min_setpoints`` key: worst credible IACS/UTS).
+            ``"upper"`` writes ``{s}_ucb = mu + kappa*sigma`` — the
+            pessimistic value for a target constrained from ABOVE (a
+            ``max_setpoints`` key: worst credible elongation, i.e. the
+            closest it credibly gets to the ceiling).
         """
+        if bound not in ("lower", "upper"):
+            raise ValueError(f"bound must be 'lower' or 'upper', got {bound!r}.")
         out = df.copy()
         mu = out[f"{short_name}_mu"].to_numpy()
         sigma = out[f"{short_name}_sigma"].to_numpy()
-        out[f"{short_name}_lcb"] = mu - kappa * sigma
+        if bound == "lower":
+            out[f"{short_name}_lcb"] = mu - kappa * sigma
+        else:
+            out[f"{short_name}_ucb"] = mu + kappa * sigma
+        return out
+
+    @classmethod
+    def add_risk_adjusted_values(
+        cls,
+        df: pd.DataFrame,
+        min_setpoints: dict,
+        max_setpoints: dict | None = None,
+        kappa: float = 1.645,
+    ) -> pd.DataFrame:
+        """Add every risk-aware bound implied by the setpoint dicts, in one call.
+
+        For each key of ``min_setpoints`` an ``{s}_lcb`` column is added; for
+        each key of ``max_setpoints`` an ``{s}_ucb``. A target appearing in
+        both (a two-sided window) gets both columns, so the ranking always
+        looks at the side that can violate its constraint.
+
+        Targets whose ``{s}_mu``/``{s}_sigma`` columns are absent are skipped
+        with a warning rather than raising: the same gentle behaviour as the
+        ``select_*`` helpers, so a partially-predicted grid still flows.
+        """
+        out = df.copy()
+        max_setpoints = max_setpoints or {}
+        for s in min_setpoints:
+            if f"{s}_mu" not in out.columns:
+                logger.warning("No '%s_mu' column; skipping LCB for '%s'.", s, s)
+                continue
+            out = cls.add_risk_adjusted_value(out, s, kappa=kappa, bound="lower")
+        for s in max_setpoints:
+            if f"{s}_mu" not in out.columns:
+                logger.warning("No '%s_mu' column; skipping UCB for '%s'.", s, s)
+                continue
+            out = cls.add_risk_adjusted_value(out, s, kappa=kappa, bound="upper")
+        return out
+
+    @staticmethod
+    def add_setpoint_margins(
+        df: pd.DataFrame,
+        min_setpoints: dict,
+        max_setpoints: dict | None = None,
+    ) -> pd.DataFrame:
+        """Signed distance from each setpoint, in the target's own units.
+
+        ``{s}_margin_min = mu - min_setpoint`` (how far ABOVE the floor) and
+        ``{s}_margin_max = max_setpoint - mu`` (how far BELOW the ceiling).
+        Positive means the point prediction respects the constraint. This is
+        the engineer-readable companion to ``pr_success_{s}``: the probability
+        says how safe, the margin says by how much.
+        """
+        out = df.copy()
+        max_setpoints = max_setpoints or {}
+        for s, lo in min_setpoints.items():
+            if f"{s}_mu" in out.columns:
+                out[f"{s}_margin_min"] = out[f"{s}_mu"] - lo
+        for s, hi in max_setpoints.items():
+            if f"{s}_mu" in out.columns:
+                out[f"{s}_margin_max"] = hi - out[f"{s}_mu"]
         return out
 
     # ------------------------------------------------------------------
@@ -342,9 +416,73 @@ class ProbabilisticEvaluation:
                 f"YAML keys (min_setpoints/max_setpoints) to match."
             )
         logger.info(
-            "Setpoint keys validated against surrogates: %s", targets
+            "Setpoint keys validated against surrogates: %s (min=%s, max=%s)",
+            targets, list(min_setpoints), list(max_setpoints),
         )
         return targets
+
+    @staticmethod
+    def build_surrogate_bounds(bundles: dict) -> dict:
+        """``{short_name -> (y_min, y_max)}`` physical support per surrogate.
+
+        Built from ``bundle.artifacts`` and keyed by SHORT NAME, which is
+        what :meth:`add_success_probabilities` looks up. Building it from
+        the bundle dict keys instead is the ``uts`` vs ``tensile_strength``
+        trap again: the lookup silently misses and the probability quietly
+        falls back to the untruncated Gaussian.
+        """
+        bounds = {
+            b.short_name: (b.artifacts.get("y_min"), b.artifacts.get("y_max"))
+            for b in bundles.values()
+        }
+        logger.info("Surrogate bounds by short name: %s", bounds)
+        return bounds
+
+    @staticmethod
+    def build_probability_selection_spec(
+        targets: list[str],
+        include_combined: bool = True,
+    ) -> dict[str, str]:
+        """``{"safest_{t}" -> "pr_success_{t}"}`` for every constrained target.
+
+        Feed the output of :meth:`validate_setpoints` so the labels and the
+        columns are generated from the SAME short names — hand-writing
+        ``{"safest_uts": "pr_success_uts"}`` while the surrogate is called
+        ``tensile_strength`` just drops that selection with a warning.
+        Works identically for min- and max-constrained targets: for a
+        ceiling, "safest" means most probability mass below it.
+        """
+        spec = {f"safest_{t}": f"pr_success_{t}" for t in targets}
+        if include_combined:
+            spec["safest_combined"] = "pr_success_all"
+        return spec
+
+    @staticmethod
+    def build_margin_selection_spec(max_setpoints: dict) -> dict[str, str]:
+        """``{label -> risk-adjusted column}`` where LOWEST wins, per ceiling.
+
+        For each ``max_setpoints`` key the column is ``{s}_ucb``: the row
+        with the smallest upper confidence bound is the one that stays
+        furthest below the ceiling even under the pessimistic reading of
+        its uncertainty. Pass the result to
+        :meth:`select_lowest_by_features`.
+
+        Min-constrained targets are deliberately NOT included: for a floor,
+        higher ``{s}_lcb`` is better, so those belong in
+        :meth:`select_highest_by_features` — see
+        :meth:`build_lcb_selection_spec`.
+        """
+        max_setpoints = max_setpoints or {}
+        return {f"most_margin_{s}": f"{s}_ucb" for s in max_setpoints}
+
+    @staticmethod
+    def build_lcb_selection_spec(min_setpoints: dict) -> dict[str, str]:
+        """``{label -> "{s}_lcb"}`` where HIGHEST wins, per floor.
+
+        Companion of :meth:`build_margin_selection_spec` for targets
+        constrained from below; pass to :meth:`select_highest_by_features`.
+        """
+        return {f"most_margin_{s}": f"{s}_lcb" for s in min_setpoints}
 
     @staticmethod
     def export_selections(
@@ -370,7 +508,13 @@ class ProbabilisticEvaluation:
             pr_success_{t}             (per target)
             pr_success_all,
             [cost, cost_phys]          (only if include_costs=True)
-            {t}_lcb                    (per target)  <- last column
+            {t}_lcb / {t}_ucb          (per target)  <- last columns
+
+        The risk-adjusted tail carries whichever bound the target actually
+        has: ``{t}_lcb`` for a floor (``min_setpoints``), ``{t}_ucb`` for a
+        ceiling (``max_setpoints``), both for a two-sided window. Columns
+        that were never computed are simply skipped, as everywhere else
+        here.
 
         Parameters
         ----------
@@ -418,7 +562,8 @@ class ProbabilisticEvaluation:
         ordered_cols += ["pr_success_all"]
         if include_costs:
             ordered_cols += ["cost", "cost_phys"]
-        ordered_cols += [f"{t}_lcb" for t in targets]
+        for t in targets:
+            ordered_cols += [f"{t}_lcb", f"{t}_ucb"]
 
         # keep ONLY these columns, dropping everything else; ends at *_lcb
         export_df = export_df[[c for c in ordered_cols if c in export_df.columns]]
