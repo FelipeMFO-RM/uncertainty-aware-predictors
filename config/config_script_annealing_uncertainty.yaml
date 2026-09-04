@@ -8,8 +8,14 @@ output_path: data/enriched/mbc_annealing_uncertainty_script_results
 bundle_dirs:
   iacs: models/annealing_iacs/notebook_170826
   uts:  models/annealing_uts/experiments/annealing-schema110826
+best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
+# Serial-number encoding schema: drives the IRI / GBEI chemical features that
+# the current annealing surrogates take as inputs. Omit the key to skip the
+# step (older bundles trained without IRI/GBEI).
+# sn_schema_path: data/structured/serial-number-encoding_020926.csv
 # Fixed material state: every non-grid feature the surrogates need.
 # IACS needs: purity, iacs        UTS needs: purity, initial_diameter, tensile_strength
+# material_reference is what the chemical features are derived from.
 material_properties:
   purity: 99.726
   iacs: 95.61
@@ -21,18 +27,24 @@ operational_limits:
 step:
   temperature: 10
   time: 5
-min_setpoints:
+# Keys are surrogate SHORT NAMES (target minus '_final'), not the bundle
+# aliases above: the 'uts' bundle has short name 'tensile_strength'.
+min_setpoints:       # floors: Pr(Y >= value), ranked on {t}_lcb
   iacs: 101
   tensile_strength: 220.0
+max_setpoints: {}    # ceilings: Pr(Y <= value), ranked on {t}_ucb
+                     # e.g.  elongation: 50.0  (needs an elongation bundle)
 delta: 0.4       # keep cells with Pr(all setpoints) >= 1 - delta
-kappa: 1.645       # one-sided 95% lower confidence bound for risk ranking
+kappa: 1.645       # one-sided 95% confidence bound for risk ranking
 ood_gamma: 1.0     # OOD sigma-inflation strength
-best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
 selection_spec_low:
   lowest_time: time
   lowest_temperature: temperature
   lowest_cost: cost
   lowest_cost_phys: cost_phys
-selection_spec_high:
-  safest_iacs: pr_success_iacs
-  safest_combined: pr_success_all
+# safest_<target>, safest_combined and most_margin_<target> are generated from
+# the validated setpoint keys; selection_spec_high is only for extra criteria.
+save_feasibility_map: true   # 6.1 heatmap as a PNG next to the CSVs
+inspect_pairs:               # section 9; omit the key to skip the dump
+  temperatures: [573, 623, 673]
+  times: [30, 60, 90]
