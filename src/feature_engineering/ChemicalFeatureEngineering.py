@@ -105,6 +105,8 @@ class ChemicalFeatureEngineering:
 
         self.iri_helper = IRIHelper(resistivity_factors)
         self.gbei_helper = GBEIHelper(enrichment_factors)
+        if "Sanity_check_Total" in df_sn.columns:
+            df_sn = df_sn.drop(columns=["Sanity_check_Total"])
         self.df_sn = df_sn
         self.id_column = id_column
         self._sn_recipes = (

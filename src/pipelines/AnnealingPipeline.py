@@ -22,13 +22,11 @@ class AnnealingDataPipeline:
     ) -> None:
         self.proc = Processing()
         self.feat = FeatureEngineering()
-        if "Sanity_check_Total" in df_sn.columns:
-            df_sn = df_sn.drop(columns=["Sanity_check_Total"])
         self.chfe = ChemicalFeatureEngineering(df_sn=df_sn, **chfe_kwargs)
 
         self.annealing_features = annealing_features
         self.df_raw = df_annealing_schema_raw
-        self.df_sn = df_sn
+        self.df_sn = self.chfe.df_sn
         self.set_pipeline()
 
     def set_pipeline(self):
