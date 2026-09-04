@@ -37,30 +37,13 @@ class AnnealingDataPipeline:
         df_annealing_schema_raw: pd.DataFrame,
         annealing_features: list[str],
         df_sn: pd.DataFrame,
-        all_samples: dict[str, dict],
-        resistivity_factors: dict,
-        enrichment_factors: dict,
-        use_below_limit: bool = False,
-        normalize_weights: bool = True,
-        normalize_composition: bool = True,
-        weight_tolerance: float = 1e-6,
-        id_column: str = "ID",
+        **chfe_kwargs,
     ) -> None:
         self.proc = Processing()
         self.feat = FeatureEngineering()
         if "Sanity_check_Total" in df_sn.columns:
             df_sn = df_sn.drop(columns=["Sanity_check_Total"])
-        self.chfe = ChemicalFeatureEngineering(
-            all_samples=all_samples,
-            df_sn=df_sn,
-            resistivity_factors=resistivity_factors,
-            enrichment_factors=enrichment_factors,
-            use_below_limit=use_below_limit,
-            normalize_weights=normalize_weights,
-            normalize_composition=normalize_composition,
-            weight_tolerance=weight_tolerance,
-            id_column=id_column,
-        )
+        self.chfe = ChemicalFeatureEngineering(df_sn=df_sn, **chfe_kwargs)
 
         self.annealing_features = annealing_features
         self.df_raw = df_annealing_schema_raw
@@ -70,7 +53,7 @@ class AnnealingDataPipeline:
     def set_pipeline(self):
         self.df_nnan = self.df_raw.dropna(how="all")
         self.df_feat = self.df_nnan[self.annealing_features]
-        self.df_iri_gbei = self.set_GBEI_IRI_on_df_raw(self.df_feat)
+        self.set_GBEI_IRI_on_df_raw()
 
     def get_iacs_df_df_val(
         self,
@@ -92,12 +75,12 @@ class AnnealingDataPipeline:
 
         return df, df_val
 
-    def set_IRI_on_df(
+    def get_IRI_on_df(
         self,
         df: pd.DataFrame,
         iri_column: str = "IRI",
     ) -> pd.DataFrame:
-        """Add the IRI column to `df`.
+        """Return a copy of `df` with the IRI column added.
 
         Delegates composition resolution and the IRI calculation
         itself to ChemicalFeatureEngineering.get_IRI.
@@ -113,12 +96,12 @@ class AnnealingDataPipeline:
         df_ans[iri_column] = self.chfe.get_IRI(df)
         return df_ans
 
-    def set_GBEI_on_df(
+    def get_GBEI_on_df(
         self,
         df: pd.DataFrame,
         gbei_column: str = "GBEI",
     ) -> pd.DataFrame:
-        """Add the GBEI column to `df`.
+        """Return a copy of `df` with the GBEI column added.
 
         Delegates composition resolution and the GBEI calculation
         itself to ChemicalFeatureEngineering.get_GBEI.
@@ -134,27 +117,15 @@ class AnnealingDataPipeline:
         df_ans[gbei_column] = self.chfe.get_GBEI(df)
         return df_ans
 
-    def set_GBEI_IRI_on_df_raw(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Attach IRI and GBEI composition-derived features to a raw
-        annealing dataset.
+    def set_GBEI_IRI_on_df_raw(self) -> None:
+        """Attach IRI and GBEI composition-derived features to
+        `self.df_feat` and store the result on `self.df_iri_gbei`.
 
-        Drops fully-empty rows, narrows `df` down to
-        FEATURES_SN_COMPOSITION_TO_SELECT, then adds the "IRI" and
-        "GBEI" columns via `set_IRI_on_df` and `set_GBEI_on_df`.
         Composition resolution uses the SN blend table already stored
         on `self.chfe`.
-
-        Args:
-            df (pd.DataFrame): Raw annealing schema data, one row
-                per experiment, including a "material_reference" column.
-
-        Returns:
-            pd.DataFrame: `df` narrowed to
-            FEATURES_SN_COMPOSITION_TO_SELECT, with "IRI" and "GBEI"
-            columns added.
         """
 
-        df_ans = self.set_IRI_on_df(df)
-        df_ans = self.set_GBEI_on_df(df_ans)
+        df_ans = self.get_IRI_on_df(self.df_feat)
+        df_ans = self.get_GBEI_on_df(df_ans)
 
-        return df_ans
+        self.df_iri_gbei = df_ans
