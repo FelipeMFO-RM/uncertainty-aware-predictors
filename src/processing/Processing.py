@@ -48,6 +48,25 @@ class Processing:
 
         return ans
 
+    def percent_str_to_numeric(self, series: pd.Series) -> pd.Series:
+        """
+        Convert a percent-formatted string Series to numeric.
+
+        Strips a trailing "%" sign and surrounding whitespace, then
+        coerces to float (invalid values become NaN).
+
+        Args:
+            series (pd.Series): Column of percent-formatted values,
+                e.g. "12.5 %".
+
+        Returns:
+            pd.Series: Numeric values, NaN where conversion failed.
+        """
+        return pd.to_numeric(
+            series.astype(str).str.replace("%", "", regex=False).str.strip(),
+            errors="coerce",
+        )
+
     def load_validation_data_chimie_paris(self, path: str) -> pd.DataFrame:
         """Load validation data from Chimie ParisTech, drop unnecessary columns,
         and filter out rows with NaN values."""
@@ -127,64 +146,3 @@ class Processing:
             f"Dropped: {len(df) - len(kept)}"
         )
         return kept
-
-    def process_annealing_elongation(
-        self, features: list[str], target: str, df_schema: pd.DataFrame
-    ) -> Union[pd.DataFrame, pd.DataFrame]:
-        """Function to process data on annealing elongation
-
-        Args:
-            features (list[str]): List of feature column names
-            target (str): Name of the target column
-            df_schema (pd.DataFrame): downloaded raw schema data
-
-        Returns:
-            Union[pd.DataFrame, pd.DataFrame]: df processed and df validation.
-        """
-        # TODO when more data, so far AD-Hoc solution
-
-        df = df_schema[features + [target]].dropna().reset_index(drop=True).copy()
-
-        df["elongation"] = pd.to_numeric(
-            df["elongation"].astype(str).str.replace("%", "", regex=False).str.strip(),
-            errors="coerce",
-        )
-        df["elongation_final"] = pd.to_numeric(
-            df["elongation_final"]
-            .astype(str)
-            .str.replace("%", "", regex=False)
-            .str.strip(),
-            errors="coerce",
-        )
-
-        df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
-
-        return df, df_val
-
-    def process_annealing_uts(
-        self,
-        features: list[str],
-        target: str,
-        df_schema: pd.DataFrame,
-        df_val: pd.DataFrame = None,
-    ) -> Union[pd.DataFrame, pd.DataFrame]:
-        """Function to process data on annealing uts
-
-        Args:
-            features (list[str]): List of feature column names
-            target (str): Name of the target column
-            df_schema (pd.DataFrame): downloaded raw schema data
-            df_val (pd.DataFrame, optional): Validation dataframe. Defaults to None.
-            threshold_initial (float, optional): Threshold for IACS values. Defaults to 95.0.
-
-        Returns:
-            Union[pd.DataFrame, pd.DataFrame]: df processed and df validation.
-        """
-        df = df_schema[features + [target]].dropna().reset_index(drop=True).copy()
-
-        if df_val is not None:
-            df_val = df_val.copy()
-        else:
-            df_val = df.sample(random_state=42, n=len(df_schema) // 5).copy()
-
-        return df, df_val

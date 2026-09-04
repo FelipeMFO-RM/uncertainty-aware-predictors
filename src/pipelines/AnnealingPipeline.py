@@ -6,25 +6,6 @@ from ..feature_engineering.FeatureEngineering import FeatureEngineering
 from ..feature_engineering.ChemicalFeatureEngineering import ChemicalFeatureEngineering
 from ..processing.Processing import Processing
 
-# FILE_NAME_SN_COMPOSITION = "serial-number-encoding_{SN_SCHEMA_DATE}.csv"
-# FILE_NAME_ANNEALING_SCHEMA_DATA = "schema_annealing_essays_{ANNEALING_SCHEMA_DATE}.csv"
-
-# FEATURES_SN_COMPOSITION_TO_SELECT = [
-#     "experiment_id",
-#     "material_reference",
-#     "purity",
-#     "initial_diameter",
-#     "temperature",
-#     "time",
-#     "iacs",
-#     "tensile_strength",
-#     "elongation",
-#     "iacs_final",
-#     "tensile_strength_final",
-#     "elongation_final",
-# ]
-
-
 class AnnealingDataPipeline:
     """Compose Processing and FeatureEngineering into one call.
 
@@ -55,6 +36,8 @@ class AnnealingDataPipeline:
         self.df_feat = self.df_nnan[self.annealing_features]
         self.set_GBEI_IRI_on_df_raw()
 
+
+    ############# Pipeline Getters #############
     def get_iacs_df_df_val(
         self,
         features_iacs: list,
@@ -66,7 +49,7 @@ class AnnealingDataPipeline:
             self.df_iri_gbei[features_iacs + [target_iacs]].dropna().reset_index(drop=True).copy()
 
         if threshold_initial is not None:
-            df = df[df[target_iacs.split("_")[0]] > threshold_initial]
+            df = df[df[target_iacs.removesuffix("_final")] > threshold_initial]
 
         if df_val is not None:
             df_val = df_val.copy()
@@ -75,6 +58,51 @@ class AnnealingDataPipeline:
 
         return df, df_val
 
+    def get_uts_df_df_val(
+        self,
+        features_uts: list,
+        target_uts: str,
+        df_val: pd.DataFrame = None,
+        threshold_initial: float = 0.
+    ):
+        df = \
+            self.df_iri_gbei[features_uts + [target_uts]].dropna().reset_index(drop=True).copy()
+
+        if threshold_initial:
+            df = df[df[target_uts.removesuffix("_final")] > threshold_initial]
+
+        if df_val is not None:
+            df_val = df_val.copy()
+        else:
+            df_val = df.sample(random_state=42, n=len(df) // 5).copy()
+
+        return df, df_val
+
+    def get_elongation_df_df_val(
+        self,
+        features_elongation: list,
+        target_elongation: str,
+        df_val: pd.DataFrame = None,
+        threshold_initial: float = 0.
+    ):
+        target_before = target_elongation.removesuffix("_final")
+        df = \
+            self.df_iri_gbei[features_elongation + [target_elongation]].dropna().reset_index(drop=True).copy()
+
+        if threshold_initial:
+            df = df[df[target_before] > threshold_initial]
+
+        df[target_before] = self.proc.percent_str_to_numeric(df[target_before])
+        df[target_elongation] = self.proc.percent_str_to_numeric(df[target_elongation])
+
+        if df_val is not None:
+            df_val = df_val.copy()
+        else:
+            df_val = df.sample(random_state=42, n=len(df) // 5).copy()
+
+        return df, df_val
+
+    ############# Chemical Feature Engineering Getters #############
     def get_IRI_on_df(
         self,
         df: pd.DataFrame,
