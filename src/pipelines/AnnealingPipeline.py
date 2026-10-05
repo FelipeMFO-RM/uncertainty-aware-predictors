@@ -18,6 +18,8 @@ class AnnealingDataPipeline:
         df_annealing_schema_raw: pd.DataFrame,
         annealing_features: list[str],
         df_sn: pd.DataFrame,
+        measured_diameter_column: str = "measured_initial_diameter",
+        nominal_diameter_column: str = "nominal_initial_diameter",
         **chfe_kwargs,
     ) -> None:
         self.proc = Processing()
@@ -25,14 +27,33 @@ class AnnealingDataPipeline:
         self.chfe = ChemicalFeatureEngineering(df_sn=df_sn, **chfe_kwargs)
 
         self.annealing_features = annealing_features
+        self.measured_diameter_column = measured_diameter_column
+        self.nominal_diameter_column = nominal_diameter_column
         self.df_raw = df_annealing_schema_raw
         self.df_sn = self.chfe.df_sn
         self.set_pipeline()
 
     def set_pipeline(self):
         self.df_nnan = self.df_raw.dropna(how="all")
+        self.set_measured_diameter()
         self.df_feat = self.df_nnan[self.annealing_features]
         self.set_GBEI_IRI_on_df_raw()
+
+    def set_measured_diameter(self) -> None:
+        """Fill non-numeric measured diameters ("-", blanks, NaN) on
+        `self.df_nnan` with the nominal diameter of the same row.
+
+        Skipped for older schemas that lack either column.
+        """
+        columns = {self.measured_diameter_column, self.nominal_diameter_column}
+        if not columns.issubset(self.df_nnan.columns):
+            return
+
+        self.df_nnan = self.proc.fill_non_numeric_from_column(
+            self.df_nnan,
+            column=self.measured_diameter_column,
+            fallback_column=self.nominal_diameter_column,
+        )
 
 
     ############# Pipeline Getters #############

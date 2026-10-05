@@ -241,7 +241,7 @@ bundle_dirs:
 material_properties:
   purity: 99.95
   iacs: 98.47
-  initial_diameter: 1.2
+  measured_initial_diameter: 1.2
   tensile_strength: 250.0
 
 operational_limits:

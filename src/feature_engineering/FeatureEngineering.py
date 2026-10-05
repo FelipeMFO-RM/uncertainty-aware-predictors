@@ -239,22 +239,22 @@ class FeatureEngineering:
         """Expand one simulation_number into all diameter pairs.
 
         For a given simulation_number:
-        - constructs all combinations (initial_diameter, final_diameter)
-        with initial_diameter > final_diameter;
+        - constructs all combinations (measured_initial_diameter, final_diameter)
+        with measured_initial_diameter > final_diameter;
         - assigns tensile_strength and tensile_strength_final from the
         corresponding diameters;
-        - recalculates total_strain = 2 * ln(initial_diameter/final_diameter);
+        - recalculates total_strain = 2 * ln(measured_initial_diameter/final_diameter);
         - calculates number_of_passes as the minimum number of actual passes
-        (lines of the df) needed to go from initial_diameter to
+        (lines of the df) needed to go from measured_initial_diameter to
         final_diameter, always reducing the diameter.
         """
         sim = group["simulation_number"].iloc[0]
         purity = group["purity"].iloc[0]
 
         # ---- diameter map -> tensile strength ----------------------
-        init_map = group[["initial_diameter", "tensile_strength"]].rename(
+        init_map = group[["measured_initial_diameter", "tensile_strength"]].rename(
             columns={
-                "initial_diameter": "diameter",
+                "measured_initial_diameter": "diameter",
                 "tensile_strength": "t_strength",
             }
         )
@@ -274,13 +274,13 @@ class FeatureEngineering:
         # ---- real pass graph (init -> final) ---------------------
         diams_all = pd.unique(
             pd.concat(
-                [group["initial_diameter"], group["final_diameter"]],
+                [group["measured_initial_diameter"], group["final_diameter"]],
                 ignore_index=True,
             )
         )
 
         edges = (
-            group[["initial_diameter", "final_diameter"]]
+            group[["measured_initial_diameter", "final_diameter"]]
             .drop_duplicates()
             .to_numpy()
         )
@@ -312,7 +312,7 @@ class FeatureEngineering:
         passes_df = pd.DataFrame(
             [(i, f, n) for (i, f), n in dist_map.items()],
             columns=[
-                "initial_diameter",
+                "measured_initial_diameter",
                 "final_diameter",
                 "number_of_passes",
             ],
@@ -320,7 +320,7 @@ class FeatureEngineering:
 
         left = diameters.rename(
             columns={
-                "diameter": "initial_diameter",
+                "diameter": "measured_initial_diameter",
                 "t_strength": "tensile_strength",
             }
         )
@@ -336,12 +336,12 @@ class FeatureEngineering:
         pairs = left.merge(right, on="key").drop(columns="key")
 
         # only vertices initial > final
-        pairs = pairs[pairs["initial_diameter"] > pairs["final_diameter"]]
+        pairs = pairs[pairs["measured_initial_diameter"] > pairs["final_diameter"]]
 
         # ---- join number_of_passes --
         pairs = pairs.merge(
             passes_df,
-            on=["initial_diameter", "final_diameter"],
+            on=["measured_initial_diameter", "final_diameter"],
             how="inner",
         )
 
@@ -349,14 +349,14 @@ class FeatureEngineering:
         pairs["simulation_number"] = sim
         pairs["purity"] = purity
         pairs["total_strain"] = 2.0 * np.log(
-            pairs["initial_diameter"] / pairs["final_diameter"]
+            pairs["measured_initial_diameter"] / pairs["final_diameter"]
         )
 
         cols = [
             "simulation_number",
             "purity",
             "tensile_strength",
-            "initial_diameter",
+            "measured_initial_diameter",
             "final_diameter",
             "total_strain",
             "tensile_strength_final",
@@ -373,7 +373,7 @@ class FeatureEngineering:
         )
 
         expanded = expanded.drop_duplicates(
-            subset=["simulation_number", "initial_diameter", "final_diameter"]
+            subset=["simulation_number", "measured_initial_diameter", "final_diameter"]
         ).reset_index(drop=True)
 
         return expanded
@@ -383,7 +383,7 @@ class FeatureEngineering:
     ) -> pd.DataFrame:
         """
         Remove from df_sim_expanded all rows that already exist in df_sim,
-        based on (simulation_number, initial_diameter, final_diameter).
+        based on (simulation_number, measured_initial_diameter, final_diameter).
 
         Args:
             df_sim (pd.DataFrame): Original simulation dataset.
@@ -392,7 +392,7 @@ class FeatureEngineering:
         Returns:
             pd.DataFrame: df_sim_expanded with original rows removed.
         """
-        key_cols = ["simulation_number", "initial_diameter", "final_diameter"]
+        key_cols = ["simulation_number", "measured_initial_diameter", "final_diameter"]
 
         # Mark original rows
         df_sim["_orig_row"] = 1
@@ -563,7 +563,7 @@ class FeatureEngineering:
 
         Example features_to_vary:
             {
-                "dim": ["initial_diameter", "final_diameter"],
+                "dim": ["measured_initial_diameter", "final_diameter"],
                 "pur": ["purity"],
                 "tts": ["total_strain"],
             }

@@ -61,20 +61,20 @@ def get_good_key(
 
 
 def get_total_drawing_strain(
-    initial_diameter,
+    measured_initial_diameter,
     final_diameter,
 ):
     """
     total_drawing_strain = 2 * ln(Di / Df)
     """
-    return 2.0 * np.log(initial_diameter / final_diameter)
+    return 2.0 * np.log(measured_initial_diameter / final_diameter)
 
 
 def get_reduction_ratio(
-    initial_diameter,
+    measured_initial_diameter,
     final_diameter,
 ):
     """
     reduction_ratio = (1 - (Df^2 / Di^2)) * 100
     """
-    return (1.0 - (final_diameter**2) / (initial_diameter**2)) * 100.0
+    return (1.0 - (final_diameter**2) / (measured_initial_diameter**2)) * 100.0

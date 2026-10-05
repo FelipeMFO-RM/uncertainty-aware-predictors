@@ -238,7 +238,7 @@ class MBCInference:
         material_properties : dict
             Fixed features of the current material state, e.g.
             ``{"purity": 99.99, "iacs": 98.5, "tensile_strength": 1200,
-               "initial_diameter": 23.0}``. Scalars only.
+               "measured_initial_diameter": 23.0}``. Scalars only.
         param_grid : dict
             Output of :meth:`build_param_grid`.
 

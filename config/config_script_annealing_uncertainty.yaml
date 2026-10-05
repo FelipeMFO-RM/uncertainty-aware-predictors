@@ -14,12 +14,12 @@ best_metric: rmse  # metric used to auto-pick the best run from a TAG folder
 # step (older bundles trained without IRI/GBEI).
 # sn_schema_path: data/structured/serial-number-encoding_020926.csv
 # Fixed material state: every non-grid feature the surrogates need.
-# IACS needs: purity, iacs        UTS needs: purity, initial_diameter, tensile_strength
+# IACS needs: purity, iacs        UTS needs: purity, measured_initial_diameter, tensile_strength
 # material_reference is what the chemical features are derived from.
 material_properties:
   purity: 99.726
   iacs: 95.61
-  initial_diameter: 2.0
+  measured_initial_diameter: 2.0
   tensile_strength: 399.32
 operational_limits:
   temperature: [473, 873]   # Kelvin

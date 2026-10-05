@@ -262,7 +262,7 @@ class ColdDrawingMBCHelper:
                         "sequence_id": seq_id,
                         "pass_number": pass_number,
                         "original_diameter": original_diameter,
-                        "initial_diameter": d_in,
+                        "measured_initial_diameter": d_in,
                         "final_diameter": d_out,
                         "step": step,
                         "total_strain": e.total_strain,
@@ -272,7 +272,7 @@ class ColdDrawingMBCHelper:
 
         cols = [
             "original_diameter",
-            "initial_diameter",
+            "measured_initial_diameter",
             "final_diameter",
             "step",
             "total_strain",

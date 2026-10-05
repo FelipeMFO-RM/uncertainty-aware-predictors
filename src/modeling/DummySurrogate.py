@@ -53,7 +53,7 @@ class DummySurrogate:
         The uncertainty-aware ``Evaluation`` helper (one_step_metrics).
     """
 
-    FEATURES = ["initial_diameter", "grain_size", "temperature", "time"]
+    FEATURES = ["measured_initial_diameter", "grain_size", "temperature", "time"]
     TARGET = "grain_size_final"
 
     def __init__(self, modl, evla) -> None:
@@ -94,7 +94,7 @@ class DummySurrogate:
         gsf = np.clip(gsf, 1.0, None)  # grain size is positive
 
         df = pd.DataFrame({
-            "initial_diameter": D,
+            "measured_initial_diameter": D,
             "grain_size": gs0,
             "temperature": T,
             "time": t,

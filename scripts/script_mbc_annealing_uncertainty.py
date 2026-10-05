@@ -350,7 +350,7 @@ sn_schema_path: data/structured/serial-number-encoding_020926.csv
 material_properties:
   purity: 99.95
   iacs: 98.47
-  initial_diameter: 1.2
+  measured_initial_diameter: 1.2
   tensile_strength: 250.0
   elongation: 6.39
   material_reference: SN027

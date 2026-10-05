@@ -460,7 +460,7 @@ class ColdDrawingRollout:
                 bundles, route, fixed_state, init_state,
                 k_samples=k_samples, seed=seed + int(sid), overrides=overrides,
             )
-            diams = [route["initial_diameter"].iloc[0], *route["final_diameter"].tolist()]
+            diams = [route["measured_initial_diameter"].iloc[0], *route["final_diameter"].tolist()]
             rec = {
                 "sequence_id": sid,
                 "route": " -> ".join(f"{d:g}" for d in diams),

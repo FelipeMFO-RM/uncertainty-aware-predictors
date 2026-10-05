@@ -67,6 +67,44 @@ class Processing:
             errors="coerce",
         )
 
+    def fill_non_numeric_from_column(
+        self,
+        df: pd.DataFrame,
+        column: str,
+        fallback_column: str,
+    ) -> pd.DataFrame:
+        """
+        Replace non-numeric entries of `column` with the value of
+        `fallback_column` on the same row.
+
+        Entries such as "-", empty strings or NaN cannot be parsed as
+        float, so they are taken from `fallback_column` instead
+        (e.g. measured diameter falls back to the nominal diameter).
+
+        Args:
+            df (pd.DataFrame): Input dataframe.
+            column (str): Column to clean and convert to float.
+            fallback_column (str): Column supplying the replacement values.
+
+        Returns:
+            pd.DataFrame: Copy of `df` with `column` as float.
+        """
+        df_ans = df.copy()
+        values = pd.to_numeric(
+            df_ans[column].astype(str).str.replace(",", ".", regex=False).str.strip(),
+            errors="coerce",
+        )
+        fallback = pd.to_numeric(df_ans[fallback_column], errors="coerce")
+        is_invalid = values.isna()
+
+        df_ans[column] = values.where(~is_invalid, fallback)
+
+        print(
+            f"'{column}': {int(is_invalid.sum())} non-numeric values "
+            f"replaced by '{fallback_column}'"
+        )
+        return df_ans
+
     def load_validation_data_chimie_paris(self, path: str) -> pd.DataFrame:
         """Load validation data from Chimie ParisTech, drop unnecessary columns,
         and filter out rows with NaN values."""

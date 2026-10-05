@@ -203,7 +203,7 @@ downstream_gs_feature: grain_size
 material_properties:
   purity: 99.95
   iacs: 98.47
-  initial_diameter: 1.2
+  measured_initial_diameter: 1.2
   initial_grain_size: 45.0
   tensile_strength: 250.0
 

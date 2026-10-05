@@ -325,7 +325,7 @@ class CDHelper:
     @staticmethod
     def add_derived_geometry(
         df: pd.DataFrame,
-        initial_col: str = "initial_diameter",
+        initial_col: str = "measured_initial_diameter",
         final_col: str = "final_diameter",
         strain_col: str = "total_strain",
         rr_col: str = "reduction_ratio",
@@ -488,7 +488,7 @@ class CDHelper:
                     purity_col: root[purity_col],
                     "n_passes": int(last[pass_number_col]),
                     "initial_tensile_strength": root[tensile_original_col],
-                    "initial_diameter": root[original_diameter_col],
+                    "measured_initial_diameter": root[original_diameter_col],
                     tensile_final_col: last[tensile_final_col],
                     final_diameter_col: last[final_diameter_col],
                 }

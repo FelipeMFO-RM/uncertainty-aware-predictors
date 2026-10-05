@@ -155,7 +155,7 @@ bundle_dirs:
 material_properties:
   purity: 99.95            # material purity (%)
   iacs: 98.47              # conductivity before annealing (%IACS)
-  initial_diameter: 1.2    # diameter (mm)
+  measured_initial_diameter: 1.2    # diameter (mm)
   tensile_strength: 250.0  # tensile strength before annealing (MPa)
 
 # >>> THE RANGE OF SETTINGS THE TOOL IS ALLOWED TO TRY <<<

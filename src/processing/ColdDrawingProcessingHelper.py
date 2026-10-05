@@ -438,7 +438,7 @@ class CDHelper:
                     "initial_tensile_strength": root[
                         tensile_original_col
                     ],
-                    "initial_diameter": root[original_diameter_col],
+                    "measured_initial_diameter": root[original_diameter_col],
                     tensile_final_col: last[tensile_final_col],
                     final_diameter_col: last[final_diameter_col],
                 }
